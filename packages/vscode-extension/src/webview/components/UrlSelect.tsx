@@ -17,12 +17,22 @@ const SelectItem = React.forwardRef<HTMLDivElement, PropsWithChildren<Select.Sel
 interface UrlSelectProps {
   value: string;
   onValueChange: (newValue: string) => void;
+  onGoBack: () => void;
+  onGoHome: () => void;
   recentItems: UrlItem[];
   items: UrlItem[];
   disabled?: boolean;
 }
 
-function UrlSelect({ onValueChange, recentItems, items, value, disabled }: UrlSelectProps) {
+function UrlSelect({
+  onValueChange,
+  onGoBack,
+  onGoHome,
+  recentItems,
+  items,
+  value,
+  disabled,
+}: UrlSelectProps) {
   // We use two lists for URL selection: one with recently used URLs and another
   // with all available URLs. Since recentItems is a subset of items, each recentItems's
   // value is prefixed to differentiate their origins when presented in the Select
@@ -30,6 +40,15 @@ function UrlSelect({ onValueChange, recentItems, items, value, disabled }: UrlSe
   // through onValueChange.
 
   const handleValueChange = (newSelection: string) => {
+    switch (newSelection) {
+      case "goBack":
+        onGoBack();
+        return;
+      case "goHome":
+        onGoHome();
+        return;
+    }
+
     const stripped = newSelection.replace(/^recent#/, "");
     onValueChange(stripped);
   };
@@ -46,6 +65,19 @@ function UrlSelect({ onValueChange, recentItems, items, value, disabled }: UrlSe
           </Select.ScrollUpButton>
           <Select.Viewport className="url-select-viewport">
             <Select.Group>
+              <SelectItem value="goBack">
+                <span className="url-select-item-with-icon">
+                  <span className="codicon codicon-arrow-left" />
+                  Go back
+                </span>
+              </SelectItem>
+              <SelectItem value="goHome">
+                <span className="url-select-item-with-icon">
+                  <span className="codicon codicon-home" />
+                  Go home
+                </span>
+              </SelectItem>
+              <Select.Separator className="url-select-separator" />
               <Select.Label className="url-select-label">Recently used:</Select.Label>
               {recentItems.map(
                 (item) =>

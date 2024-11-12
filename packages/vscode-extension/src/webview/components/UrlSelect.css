@@ -97,6 +97,11 @@
   padding-top: 6px;
   padding-bottom: 6px;
 }
+.url-select-item-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 @media (width <= 350px) {
   .url-select-trigger {

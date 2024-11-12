@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 import { useProject } from "../providers/ProjectProvider";
 import UrlSelect, { UrlItem } from "./UrlSelect";
 import { IconButtonWithOptions } from "./IconButtonWithOptions";
-import IconButton from "./shared/IconButton";
 
 function ReloadButton({ disabled }: { disabled: boolean }) {
   const { project } = useProject();
@@ -78,40 +77,32 @@ function UrlBar({ disabled }: { disabled?: boolean }) {
     return [...urlList].sort((a, b) => a.name.localeCompare(b.name));
   }, [urlList]);
 
+  const handleGoBack = () => {
+    setUrlHistory((prevUrlHistory) => {
+      const newUrlHistory = prevUrlHistory.slice(1);
+
+      if (newUrlHistory.length > 0) {
+        setBackNavigationPath(newUrlHistory[0]);
+        project.openNavigation(newUrlHistory[0]);
+      }
+
+      return newUrlHistory;
+    });
+  };
+
+  const handleGoHome = () => {
+    project.goHome("/{}");
+  };
+
   return (
     <>
-      <IconButton
-        tooltip={{
-          label: "Go back",
-          side: "bottom",
-        }}
-        disabled={disabled || urlHistory.length < 2}
-        onClick={() => {
-          setUrlHistory((prevUrlHistory) => {
-            const newUrlHistory = prevUrlHistory.slice(1);
-            setBackNavigationPath(newUrlHistory[0]);
-            project.openNavigation(newUrlHistory[0]);
-            return newUrlHistory;
-          });
-        }}>
-        <span className="codicon codicon-arrow-left" />
-      </IconButton>
       <ReloadButton disabled={disabled ?? false} />
-      <IconButton
-        onClick={() => {
-          project.goHome("/{}");
-        }}
-        tooltip={{
-          label: "Go to main screen",
-          side: "bottom",
-        }}
-        disabled={disabled}>
-        <span className="codicon codicon-home" />
-      </IconButton>
       <UrlSelect
         onValueChange={(value: string) => {
           project.openNavigation(value);
         }}
+        onGoBack={handleGoBack}
+        onGoHome={handleGoHome}
         recentItems={recentUrlList}
         items={sortedUrlList}
         value={urlList[0]?.id}
