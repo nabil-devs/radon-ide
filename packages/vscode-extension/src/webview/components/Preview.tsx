@@ -24,10 +24,11 @@ import {
 import { useResizableProps } from "../hooks/useResizableProps";
 import ZoomControls from "./ZoomControls";
 import { throttle } from "../../utilities/throttle";
-import { Platform } from "../providers/UtilsProvider";
+import { Platform, useUtils } from "../providers/UtilsProvider";
 import { useWorkspaceConfig } from "../providers/WorkspaceConfigProvider";
 import DimensionsBox from "./DimensionsBox";
 import ReplayUI from "./ReplayUI";
+import IconButton from "./shared/IconButton";
 
 declare module "react" {
   interface CSSProperties {
@@ -146,11 +147,12 @@ function TouchPointIndicator({ isPressing }: { isPressing: boolean }) {
   return <div className={`touch-indicator ${isPressing ? "pressed" : ""}`}></div>;
 }
 
-type ButtonGroupLeftProps = {
+type SideButtonGroupProps = {
   children: ReactNode;
+  side: "left" | "right";
 };
 
-function ButtonGroupLeft({ children }: ButtonGroupLeftProps) {
+function SideButtonGroup({ children, side }: SideButtonGroupProps) {
   const [isMouseOver, setIsMouseOver] = useState(false);
 
   const hideButtonGroupTimeout = useRef<NodeJS.Timeout | undefined>();
@@ -167,10 +169,13 @@ function ButtonGroupLeft({ children }: ButtonGroupLeftProps) {
   };
 
   return (
-    <div onMouseOver={onMouseOver} onMouseOut={onMouseOut} className="button-group-left-container">
+    <div
+      onMouseOver={onMouseOver}
+      onMouseOut={onMouseOut}
+      className={`button-group-${side}-container`}>
       <div
         style={isMouseOver ? { transform: "translateX(0px)" } : {}}
-        className="button-group-left">
+        className={`button-group-${side}`}>
         {children}
       </div>
     </div>
@@ -184,8 +189,11 @@ type Props = {
   setInspectStackData: (inspectStackData: InspectStackData | null) => void;
   onInspectorItemSelected: (item: InspectDataStackItem) => void;
   zoomLevel: ZoomLevelType;
+  logCounter: number;
+  setLogCounter: (count: number) => void;
   onZoomChanged: (zoomLevel: ZoomLevelType) => void;
   replayData: RecordingData | undefined;
+  setReplayData: (recordingData: RecordingData | undefined) => void;
   onReplayClose: () => void;
 };
 
@@ -211,8 +219,11 @@ function Preview({
   setInspectStackData,
   onInspectorItemSelected,
   zoomLevel,
+  logCounter,
+  setLogCounter,
   onZoomChanged,
   replayData,
+  setReplayData,
   onReplayClose,
 }: Props) {
   const wrapperDivRef = useRef<HTMLDivElement>(null);
@@ -223,6 +234,7 @@ function Preview({
   const [anchorPoint, setAnchorPoint] = useState<Point>({ x: 0.5, y: 0.5 });
   const previewRef = useRef<HTMLImageElement>(null);
   const [showPreviewRequested, setShowPreviewRequested] = useState(false);
+  const { showDismissableError } = useUtils();
 
   const workspace = useWorkspaceConfig();
   const { projectState, project } = useProject();
@@ -549,6 +561,14 @@ function Preview({
   const normalTouchIndicatorSize = 33;
   const smallTouchIndicatorSize = 9;
 
+  const handleReplay = async () => {
+    try {
+      setReplayData(await project.captureReplay());
+    } catch (e) {
+      showDismissableError("Failed to capture replay");
+    }
+  };
+
   return (
     <>
       <div
@@ -687,14 +707,41 @@ function Preview({
           </Resizable>
         )}
       </div>
-      <ButtonGroupLeft>
+      <SideButtonGroup side="left">
         <ZoomControls
           zoomLevel={zoomLevel}
           onZoomChanged={onZoomChanged}
           device={device}
           wrapperDivRef={wrapperDivRef}
         />
-      </ButtonGroupLeft>
+      </SideButtonGroup>
+
+      <SideButtonGroup side="right">
+        <IconButton
+          tooltip={{
+            label: "Replay the last few seconds of the app",
+            side: "left",
+          }}
+          onClick={handleReplay}
+          disabled={isStarting}>
+          <span className="icons-container">
+            <span className="codicon codicon-triangle-left icons-rewind" />
+            <span className="codicon codicon-triangle-left icons-rewind" />
+          </span>
+        </IconButton>
+        <IconButton
+          counter={logCounter}
+          onClick={() => {
+            setLogCounter(0);
+            project.focusDebugConsole();
+          }}
+          tooltip={{
+            label: "Open logs panel",
+            side: "left",
+          }}>
+          <span slot="start" className="codicon codicon-debug-console" />
+        </IconButton>
+      </SideButtonGroup>
     </>
   );
 }

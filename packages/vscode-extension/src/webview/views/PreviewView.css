@@ -26,13 +26,29 @@
 
 .button-group-left {
   display: flex;
-  transition: 0.5s;
+  transition: 0.4s;
   transform: translateX(-40px);
+}
+
+.button-group-right {
+  background-color: var(--swm-zoom-controls-background);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 2px;
+  transform: none;
 }
 
 .button-group-left-container {
   position: absolute;
   left: 10px;
+  display: flex;
+}
+
+.button-group-right-container {
+  position: absolute;
+  right: 10px;
   display: flex;
 }
 
@@ -74,4 +90,11 @@
 
 .device-select {
   min-width: 200px;
+}
+
+@media (max-width: 350px) {
+  .button-group-right {
+    transition: 0.4s;
+    transform: translateX(45px);
+  }
 }

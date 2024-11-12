@@ -48,8 +48,8 @@ function LoadingComponent({ finishedInitialLoad, devicesNotFound }: LoadingCompo
 }
 
 function PreviewView() {
-  const { projectState, project, deviceSettings } = useProject();
-  const { reportIssue, showDismissableError } = useUtils();
+  const { projectState, project } = useProject();
+  const { reportIssue } = useUtils();
 
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectFrame, setInspectFrame] = useState<Frame | null>(null);
@@ -126,14 +126,6 @@ function PreviewView() {
     }
   };
 
-  const handleReplay = async () => {
-    try {
-      setReplayData(await project.captureReplay());
-    } catch (e) {
-      showDismissableError("Failed to capture replay");
-    }
-  };
-
   function onInspectorItemSelected(item: InspectDataStackItem) {
     openFileAt(item.source.fileName, item.source.line0Based, item.source.column0Based);
     setIsInspecting(false);
@@ -144,40 +136,11 @@ function PreviewView() {
     setInspectStackData(null);
   }
 
-  const showReplayButton = deviceSettings.replaysEnabled;
-
   return (
     <div className="panel-view">
       <div className="button-group-top">
         <UrlBar key={resetKey} disabled={devicesNotFound} />
         <div className="spacer" />
-        {showReplayButton && (
-          <Button
-            tooltip={{
-              label: "Replay the last few seconds of the app",
-            }}
-            onClick={handleReplay}
-            disabled={isStarting}>
-            <span className="icons-container">
-              <span className="codicon codicon-triangle-left icons-rewind" />
-              <span className="codicon codicon-triangle-left icons-rewind" />
-            </span>
-            Replay
-          </Button>
-        )}
-        <Button
-          counter={logCounter}
-          onClick={() => {
-            setLogCounter(0);
-            project.focusDebugConsole();
-          }}
-          tooltip={{
-            label: "Open logs panel",
-          }}
-          disabled={devicesNotFound}>
-          <span slot="start" className="codicon codicon-debug-console" />
-          Logs
-        </Button>
         <SettingsDropdown project={project} isDeviceRunning={isRunning} disabled={devicesNotFound}>
           <IconButton tooltip={{ label: "Settings", type: "primary" }}>
             <span className="codicon codicon-settings-gear" />
@@ -195,6 +158,9 @@ function PreviewView() {
           onInspectorItemSelected={onInspectorItemSelected}
           zoomLevel={zoomLevel}
           replayData={replayData}
+          setReplayData={setReplayData}
+          logCounter={logCounter}
+          setLogCounter={setLogCounter}
           onReplayClose={() => setReplayData(undefined)}
           onZoomChanged={onZoomChanged}
         />
