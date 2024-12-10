@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, MouseEvent, forwardRef, RefObject, useCallback } from "react";
+import { ReactScanInternals, start } from "../react-scan";
+import { flushOutlines } from "../react-scan/core/web/outline";
 import clamp from "lodash/clamp";
 import { VSCodeProgressRing } from "@vscode/webview-ui-toolkit/react";
 import { Resizable } from "re-resizable";
@@ -566,6 +568,70 @@ function Preview({
   const normalTouchIndicatorSize = 33;
   const smallTouchIndicatorSize = 9;
 
+  const scanRootRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (showDevicePreview) {
+      console.log("STARTZ", scanRootRef.current);
+
+      const canvasRoot = scanRootRef.current!;
+
+      const canvasSize = canvasRoot.getBoundingClientRect();
+
+      const canvas = document.createElement("canvas");
+      canvas.style.position = "reliative";
+      canvas.style.top = "0";
+      canvas.style.left = "0";
+      canvas.style.width = canvasSize.width + "px";
+      canvas.style.height = canvasSize.height + "px";
+      canvas.style.pointerEvents = "none";
+      canvas.style.zIndex = "2147483646";
+      canvas.setAttribute("aria-hidden", "true");
+
+      canvasRoot.appendChild(canvas);
+
+      const isOffscreenCanvasSupported = "OffscreenCanvas" in globalThis;
+      const offscreenCanvas = isOffscreenCanvasSupported
+        ? canvas.transferControlToOffscreen()
+        : canvas;
+
+      const ctx = offscreenCanvas.getContext("2d") as
+        | OffscreenCanvasRenderingContext2D
+        | CanvasRenderingContext2D;
+
+      const dpi = window.devicePixelRatio || 1;
+      ctx.canvas.width = dpi * canvasSize.width;
+      ctx.canvas.height = dpi * canvasSize.height;
+      ctx.resetTransform();
+      ctx.scale(dpi, dpi);
+
+      // create fake dom element with display: none
+      const fakeNode = document.createElement("div");
+      fakeNode.style.display = "none";
+
+      function logHandler(event) {
+        if (event.reactScanData) {
+          const outline = JSON.parse(event.reactScanData);
+          const percRect = outline.rect;
+          outline.rect = {
+            x: percRect.x * canvasSize.width,
+            y: percRect.y * canvasSize.height,
+            width: percRect.width * canvasSize.width,
+            height: percRect.height * canvasSize.height,
+          };
+          outline.domNode = fakeNode;
+          ReactScanInternals.scheduledOutlines.push(outline);
+          flushOutlines(ctx, new Map());
+        }
+      }
+      project.addListener("log", logHandler);
+
+      return () => {
+        project.removeListener("log", logHandler);
+        canvasRoot.removeChild(canvas);
+      };
+    }
+  }, [showDevicePreview]);
+
   return (
     <>
       <div
@@ -681,6 +747,11 @@ function Preview({
                 )}
               </div>
               <DeviceFrame device={device} isFrameDisabled={isFrameDisabled} />
+              <div
+                ref={scanRootRef}
+                className="phone-screen phone-scan-overlay"
+                style={{ pointerEvents: "none" }}
+              />
             </div>
           </Resizable>
         )}

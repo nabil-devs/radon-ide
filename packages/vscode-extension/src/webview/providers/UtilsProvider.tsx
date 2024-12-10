@@ -43,7 +43,7 @@ export function installLogOverrides() {
     };
   }
 
-  (["log", "info", "warn", "error"] as const).forEach(wrapConsole);
+  // (["log", "info", "warn", "error"] as const).forEach(wrapConsole);
 
   // install uncaught exception handler
   window.addEventListener("error", (event) => {

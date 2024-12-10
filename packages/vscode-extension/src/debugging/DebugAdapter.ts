@@ -157,6 +157,14 @@ export class DebugAdapter extends DebugSession {
       // We return here to avoid passing internal logs to the user debug console,
       // but they will still be visible in metro log feed.
       return;
+    } else if (argsLen > 0 && message.params.args[0].value === "__REACT_SCAN") {
+      this.sendEvent(
+        new Event("RNIDE_consoleLog", {
+          category: "none",
+          reactScanData: message.params.args[1].value,
+        })
+      );
+      return;
     } else if (argsLen > 3 && message.params.args[argsLen - 1].type === "number") {
       // Since console.log stack is extracted from Error, unlike other messages sent over CDP
       // the line and column numbers are 1-based
@@ -175,8 +183,10 @@ export class DebugAdapter extends DebugSession {
 
       output = new OutputEvent(
         (await formatMessage(message.params.args.slice(0, -3))) + "\n",
+        // "Something\n",
         typeToCategory(message.params.type)
       );
+      console.log("Output", sourceURL, lineNumber1Based, columnNumber0Based);
       output.body = {
         ...output.body,
         //@ts-ignore source, line, column and group are valid fields
@@ -198,6 +208,7 @@ export class DebugAdapter extends DebugSession {
         variablesReference: variablesRefDapID,
       };
     }
+    console.log("SEND OUTPUT", output);
     this.sendEvent(output);
     this.sendEvent(
       new Event("RNIDE_consoleLog", { category: typeToCategory(message.params.type) })

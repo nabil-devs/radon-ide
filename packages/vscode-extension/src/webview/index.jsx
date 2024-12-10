@@ -1,3 +1,4 @@
+import { setOptions } from "./react-scan";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -39,3 +40,5 @@ root.render(
     </ProjectProvider>
   </React.StrictMode>
 );
+
+setOptions({ showToolbar: false, enabled: true, animationSpeed: "slow", alwaysShowLabels: true });

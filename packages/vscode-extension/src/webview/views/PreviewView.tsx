@@ -97,8 +97,11 @@ function PreviewView() {
   const { openFileAt, saveVideoRecording } = useUtils();
 
   useEffect(() => {
-    function incrementLogCounter() {
-      setLogCounter((c) => c + 1);
+    function incrementLogCounter(event) {
+      if (event.reactScanData) {
+      } else {
+        setLogCounter((c) => c + 1);
+      }
     }
     project.addListener("log", incrementLogCounter);
 
