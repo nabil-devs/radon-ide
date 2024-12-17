@@ -5,7 +5,6 @@ import stripAnsi from "strip-ansi";
 import { minimatch } from "minimatch";
 import { isEqual } from "lodash";
 import {
-  ActivateDeviceResult,
   AppPermissionType,
   DeviceSettings,
   InspectData,
@@ -22,7 +21,7 @@ import {
 import { Logger } from "../Logger";
 import { DeviceInfo } from "../common/DeviceManager";
 import { DeviceAlreadyUsedError, DeviceManager } from "../devices/DeviceManager";
-import { extensionContext } from "../utilities/extensionContext";
+import { extensionContext, getAppRootFolder } from "../utilities/extensionContext";
 import { IosSimulatorDevice } from "../devices/IosSimulatorDevice";
 import { AndroidEmulatorDevice } from "../devices/AndroidEmulatorDevice";
 import { DependencyManager } from "../dependency/DependencyManager";
@@ -31,9 +30,14 @@ import { DebugSessionDelegate } from "../debugging/DebugSession";
 import { Metro, MetroDelegate } from "./metro";
 import { Devtools } from "./devtools";
 import { AppEvent, DeviceSession, EventDelegate } from "./deviceSession";
-import { PlatformBuildCache } from "../builders/PlatformBuildCache";
+import { BuildCache } from "../builders/BuildCache";
 import { PanelLocation } from "../common/WorkspaceConfig";
-import { activateDevice, getLicenseToken } from "../utilities/license";
+import {
+  activateDevice,
+  watchLicenseTokenChange,
+  getLicenseToken,
+  refreshTokenPeriodically,
+} from "../utilities/license";
 
 const DEVICE_SETTINGS_KEY = "device_settings_v4";
 const LAST_SELECTED_DEVICE_KEY = "last_selected_device";
@@ -56,6 +60,8 @@ export class Project
   private isCachedBuildStale: boolean;
 
   private fileWatcher: Disposable;
+  private licenseWatcher: Disposable;
+  private licenseUpdater: Disposable;
 
   private deviceSession: DeviceSession | undefined;
 
@@ -95,6 +101,11 @@ export class Project
 
     this.fileWatcher = watchProjectFiles(() => {
       this.checkIfNativeChanged();
+    });
+    this.licenseUpdater = refreshTokenPeriodically();
+    this.licenseWatcher = watchLicenseTokenChange(async () => {
+      const hasActiveLicense = await this.hasActiveLicense();
+      this.eventEmitter.emit("licenseActivationChanged", hasActiveLicense);
     });
   }
 
@@ -278,6 +289,8 @@ export class Project
     this.devtools?.dispose();
     this.deviceManager.removeListener("deviceRemoved", this.removeDeviceListener);
     this.fileWatcher.dispose();
+    this.licenseWatcher.dispose();
+    this.licenseUpdater.dispose();
   }
 
   private async reloadMetro() {
@@ -358,7 +371,7 @@ export class Project
   }
 
   public async reload(type: ReloadAction): Promise<boolean> {
-    this.updateProjectState({ status: "starting" });
+    this.updateProjectState({ status: "starting", startupMessage: StartupMessage.Restarting });
 
     // this action needs to be handled outside of device session as it resets the device session itself
     if (type === "reboot") {
@@ -495,9 +508,6 @@ export class Project
   public async activateLicense(activationKey: string) {
     const computerName = os.hostname();
     const activated = await activateDevice(activationKey, computerName);
-    if (activated === ActivateDeviceResult.succeeded) {
-      this.eventEmitter.emit("licenseActivationChanged", true);
-    }
     return activated;
   }
 
@@ -632,6 +642,7 @@ export class Project
         this.devtools,
         this.metro,
         this.dependencyManager,
+        new BuildCache(device.platform, getAppRootFolder()),
         this,
         this
       );
@@ -669,9 +680,8 @@ export class Project
   };
 
   private checkIfNativeChanged = throttleAsync(async () => {
-    if (!this.isCachedBuildStale && this.projectState.selectedDevice) {
-      const platform = this.projectState.selectedDevice.platform;
-      const isCacheStale = await PlatformBuildCache.forPlatform(platform).isCacheStale();
+    if (!this.isCachedBuildStale && this.deviceSession) {
+      const isCacheStale = await this.deviceSession.buildCache.isCacheStale();
 
       if (isCacheStale) {
         this.isCachedBuildStale = true;

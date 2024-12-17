@@ -182,6 +182,7 @@ function TouchPointIndicator({ isPressing }: { isPressing: boolean }) {
 
 type Props = {
   isInspecting: boolean;
+  setIsInspecting: (isInspecting: boolean) => void;
   inspectFrame: Frame | null;
   setInspectFrame: (inspectFrame: Frame | null) => void;
   setInspectStackData: (inspectStackData: InspectStackData | null) => void;
@@ -209,6 +210,7 @@ function calculateMirroredTouchPosition(touchPoint: Point, anchorPoint: Point) {
 
 function Preview({
   isInspecting,
+  setIsInspecting,
   inspectFrame,
   setInspectFrame,
   setInspectStackData,
@@ -280,6 +282,10 @@ function Preview({
 
   type MouseMove = "Move" | "Down" | "Up";
   function sendTouch(event: MouseEvent<HTMLDivElement>, type: MouseMove) {
+    if (shouldPreventFromSendingTouch) {
+      return;
+    }
+
     const { x, y } = getTouchPosition(event);
     project.dispatchTouches([{ xRatio: x, yRatio: y }], type);
   }
@@ -290,6 +296,10 @@ function Preview({
   }
 
   function sendMultiTouch(pt: Point, type: MouseMove) {
+    if (shouldPreventFromSendingTouch) {
+      return;
+    }
+
     const secondPt = calculateMirroredTouchPosition(pt, anchorPoint);
     project.dispatchTouches(
       [
@@ -343,16 +353,18 @@ function Preview({
     !showDevicePreview ||
     !!replayData;
 
+  const shouldPreventFromSendingTouch = isInspecting || !!inspectFrame;
+
   function onMouseMove(e: MouseEvent<HTMLDivElement>) {
     e.preventDefault();
-    if (isMultiTouching) {
+    if (isInspecting) {
+      sendInspect(e, "Move", false);
+    } else if (isMultiTouching) {
       setTouchPoint(getTouchPosition(e));
       isPanning && moveAnchorPoint(e);
       isPressing && sendMultiTouchForEvent(e, "Move");
     } else if (isPressing) {
       sendTouch(e, "Move");
-    } else if (isInspecting) {
-      sendInspect(e, "Move", false);
     }
     currentMousePosition.current = e;
   }
@@ -363,23 +375,27 @@ function Preview({
 
     if (isInspecting) {
       sendInspect(e, e.button === 2 ? "RightButtonDown" : "Down", true);
-    } else if (inspectFrame) {
-      // if element is highlighted, we clear it here and ignore first click (don't send it to device)
-      resetInspector();
-    } else if (e.button === 2) {
-      sendInspect(e, "RightButtonDown", true);
-    } else if (isMultiTouching) {
-      setIsPressing(true);
-      sendMultiTouchForEvent(e, "Down");
-    } else {
-      setIsPressing(true);
-      sendTouch(e, "Down");
+    } else if (!inspectFrame) {
+      if (e.button === 2) {
+        sendInspect(e, "RightButtonDown", true);
+      } else if (isMultiTouching) {
+        setIsPressing(true);
+        sendMultiTouchForEvent(e, "Down");
+      } else {
+        setIsPressing(true);
+        sendTouch(e, "Down");
+      }
     }
   }
 
   function onMouseUp(e: MouseEvent<HTMLDivElement>) {
     e.preventDefault();
-    if (isPressing) {
+    if (isInspecting) {
+      setIsInspecting(false);
+    } else if (!isInspecting && inspectFrame) {
+      // if element is highlighted, we clear it here and ignore first click (don't send it to device)
+      resetInspector();
+    } else if (isPressing) {
       if (isMultiTouching) {
         sendMultiTouchForEvent(e, "Up");
       } else {
@@ -434,7 +450,9 @@ function Preview({
 
   function onWrapperMouseDown(e: MouseEvent<HTMLDivElement>) {
     e.preventDefault();
-    setIsPressing(true);
+    if (e.button !== 2) {
+      setIsPressing(true);
+    }
   }
 
   function onWrapperMouseUp(e: MouseEvent<HTMLDivElement>) {
