@@ -24,6 +24,7 @@ import ReplayUI from "./ReplayUI";
 import MjpegImg from "../Preview/MjpegImg";
 import { useKeyPresses } from "../Preview/hooks";
 import Device from "../Preview/Device";
+import { Blockrain } from "../views/Blockrain";
 
 function TouchPointIndicator({ isPressing }: { isPressing: boolean }) {
   return <div className={`touch-indicator ${isPressing ? "pressed" : ""}`}></div>;
@@ -571,6 +572,9 @@ function Preview({
         {!showDevicePreview && !hasBuildError && (
           <Device device={device!} resizableProps={resizableProps}>
             <div className="phone-sized phone-content-loading-background" />
+            <div className="phone-sized">
+              <Blockrain />
+            </div>
             <div className="phone-sized phone-content-loading ">
               <PreviewLoader onRequestShowPreview={() => setShowPreviewRequested(true)} />
             </div>

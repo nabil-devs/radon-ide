@@ -1,0 +1,9 @@
+/* we start game automatically, so we don't need to show the start holder */
+.blockrain-start-holder {
+  display: none !important;
+}
+
+.blockrain-game-container {
+  width: 100%;
+  height: 100%;
+}
