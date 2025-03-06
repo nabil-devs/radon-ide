@@ -4,7 +4,7 @@ on:
     inputs:
       publish:
         description: 'Publish to marketplaces'
-        default: true
+        default: false
         type: boolean
       prerelease:
         description: 'Mark as pre-release'
@@ -30,11 +30,15 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    env:
+      WORKING_DIRECTORY: packages/vscode-extension
 
     steps:
       - name: Set workflow start time
         id: date
-        run: echo "::set-output name=date::$(date +'%Y-%m-%dT%H%M%S')"
+        run: |
+          datetime=$(date +'%Y-%m-%dT%H%M%S')
+          echo "date=$datetime" >> $GITHUB_OUTPUT
 
       - name: Set targets
         id: set_targets
@@ -71,20 +75,21 @@ jobs:
           cache: npm
           cache-dependency-path: packages/vscode-extension/package-lock.json
 
-      - name: Change directory
-        run: cd packages/vscode-extension
-
       - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIRECTORY }}
         run: npm ci
 
       - name: Package extension
         uses: HaaLeo/publish-vscode-extension@v1
         id: package_extension
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           dryRun: true
           pat: stub
           target: ${{ steps.set_targets.outputs.targets }}
           preRelease: ${{ github.event.inputs.prerelease }}
+          packagePath: ${{ env.WORKING_DIRECTORY }}
 
       - name: Sanitize ref name for artifact upload
         id: sanitize
