@@ -149,7 +149,7 @@ export class DebugSession implements Disposable {
   }
 
   public async connectJSDebugger(metro: Metro) {
-    if (this.wasConnectedToCDP) {
+    if (this.wasConnectedToCDP || !this.vscSession) {
       await this.restart();
     }
 
@@ -158,7 +158,7 @@ export class DebugSession implements Disposable {
       return false;
     }
 
-    const isUsingNewDebugger = metro.isUsingNewDebugger.valueOf();
+    const isUsingNewDebugger = metro.isUsingNewDebugger;
 
     await this.connectCDPDebugger({
       websocketAddress,

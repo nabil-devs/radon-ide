@@ -31,6 +31,9 @@ import { PanelLocation } from "./common/WorkspaceConfig";
 import { Platform } from "./utilities/platform";
 import { IDE } from "./project/ide";
 import { ProxyDebugSessionAdapterDescriptorFactory } from "./debugging/ProxyDebugAdapter";
+import { sleep } from "./utilities/retry";
+import { DebugSession } from "./debugging/DebugSession";
+import { Metro } from "./project/metro";
 
 const OPEN_PANEL_ON_ACTIVATION = "open_panel_on_activation";
 
@@ -300,8 +303,54 @@ class LaunchConfigDebugAdapterDescriptorFactory implements vscode.DebugAdapterDe
   }
 }
 
+function isInWorkspace(filePath: string) {
+  // first check if the provided path is a parent of any workspace folder
+  return workspace.workspaceFolders?.some((folder) => filePath.startsWith(folder.uri.fsPath));
+}
+
+let debugSession: DebugSession | undefined;
+
+function monitorMetroInstance() {
+  const ports = [8081, 8082, 8083];
+
+  async function scanPort(port: number) {
+    try {
+      const response = await fetch(`http://localhost:${port}/status`);
+      if (response.ok) {
+        // we expect metro to include a response header X-React-Native-Project-Root
+        // that points to the project root folder
+        const projectRoot = response.headers.get("X-React-Native-Project-Root");
+        if (!debugSession && projectRoot && isInWorkspace(projectRoot)) {
+          debugSession = new DebugSession({
+            onConsoleLog: () => {},
+            onDebuggerPaused: () => {},
+            onDebuggerResumed: () => {},
+            onProfilingCPUStarted: () => {},
+            onProfilingCPUStopped: () => {},
+          });
+          const metro = new Metro(port, [projectRoot]);
+          const success = await debugSession.connectJSDebugger(metro);
+          if (!success) {
+            debugSession.dispose();
+            debugSession = undefined;
+          }
+        }
+      }
+    } catch (error) {}
+  }
+
+  function scanPorts() {
+    Promise.all(ports.map(scanPort))
+      .then(() => sleep(2000))
+      .then(scanPorts);
+  }
+
+  scanPorts();
+}
+
 function extensionActivated() {
   commands.executeCommand("setContext", "RNIDE.extensionIsActive", true);
+  monitorMetroInstance();
   if (extensionContext.workspaceState.get(OPEN_PANEL_ON_ACTIVATION)) {
     commands.executeCommand("RNIDE.openPanel");
   }

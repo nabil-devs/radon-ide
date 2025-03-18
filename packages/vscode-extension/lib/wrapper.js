@@ -365,7 +365,7 @@ export function AppWrapper({ children, initialProps, fabric }) {
 
   useEffect(() => {
     if (devtoolsAgent) {
-      LogBox.uninstall();
+      // LogBox.uninstall();
       const LoadingView = RNInternals.LoadingView;
       LoadingView.showMessage = (message) => {
         devtoolsAgent._bridge.send("RNIDE_fastRefreshStarted");
