@@ -103,19 +103,15 @@ export class DebugAdapter extends DebugAdapterSession {
     request?: DebugProtocol.Request | undefined
   ) {
     switch (command) {
-      case "RNIDE_connect_cdp_debugger":
-        if (this.cdpDebugSession) {
-          debug.stopDebugging(this.cdpDebugSession);
-          this.cdpDebugSession = null;
-        }
-        await this.connectJSDebugger(args);
-        break;
+      // case "RNIDE_connect_cdp_debugger":
+      //   if (this.cdpDebugSession) {
+      //     debug.stopDebugging(this.cdpDebugSession);
+      //     this.cdpDebugSession = null;
+      //   }
+      //   await this.connectJSDebugger(args);
+      //   break;
       case "RNIDE_log_message":
         this.logCustomMessage(args.message, args.type, args.source);
-        break;
-      default:
-        // NOTE: forward unhandled custom requests to the JS Debug session
-        await this.cdpDebugSession?.customRequest(command, args);
         break;
     }
     this.sendResponse(response);

@@ -1,14 +1,10 @@
 import assert from "assert";
-import {
-  commands,
-  debug,
-  DebugSessionCustomEvent,
-  Disposable,
-  DebugSession as VscDebugSession,
-} from "vscode";
+import { commands, debug, DebugSessionCustomEvent, Disposable } from "vscode";
+import * as vscode from "vscode";
 import { Metro } from "../project/metro";
 import { Logger } from "../Logger";
 import { CDPConfiguration } from "./DebugAdapter";
+import { disposeAll } from "../utilities/disposables";
 
 const PING_TIMEOUT = 1000;
 
@@ -17,11 +13,12 @@ export const DEBUG_PAUSED = "RNIDE_paused";
 export const DEBUG_RESUMED = "RNIDE_continued";
 
 export type DebugSessionDelegate = {
-  onConsoleLog(event: DebugSessionCustomEvent): void;
-  onDebuggerPaused(event: DebugSessionCustomEvent): void;
-  onDebuggerResumed(event: DebugSessionCustomEvent): void;
-  onProfilingCPUStarted(event: DebugSessionCustomEvent): void;
-  onProfilingCPUStopped(event: DebugSessionCustomEvent): void;
+  onConsoleLog?(event: DebugSessionCustomEvent): void;
+  onDebuggerPaused?(event: DebugSessionCustomEvent): void;
+  onDebuggerResumed?(event: DebugSessionCustomEvent): void;
+  onProfilingCPUStarted?(event: DebugSessionCustomEvent): void;
+  onProfilingCPUStopped?(event: DebugSessionCustomEvent): void;
+  onDebugSessionTerminated?(): void;
 };
 
 export type DebugSource = { filename?: string; line1based?: number; column0based?: number };
@@ -29,43 +26,54 @@ export type DebugSource = { filename?: string; line1based?: number; column0based
 const REACT_NATIVE_SESSION_TYPE = "com.swmansion.react-native-debugger";
 
 export class DebugSession implements Disposable {
-  private vscSession: VscDebugSession | undefined;
-  private debugEventsListener: Disposable;
-  private pingTimeout: NodeJS.Timeout | undefined;
-  private pingResolve: ((result: boolean) => void) | undefined;
+  private parentDebugSession: vscode.DebugSession | undefined;
+  private jsDebugSession: vscode.DebugSession | undefined;
+
+  private disposables: Disposable[] = [];
+
+  private pingResolve: (() => void) | undefined;
   private wasConnectedToCDP: boolean = false;
   private currentWsTarget: string | undefined;
 
   constructor(private delegate: DebugSessionDelegate) {
-    this.debugEventsListener = debug.onDidReceiveDebugSessionCustomEvent((event) => {
-      switch (event.event) {
-        case DEBUG_CONSOLE_LOG:
-          this.delegate.onConsoleLog(event);
-          break;
-        case DEBUG_PAUSED:
-          this.delegate.onDebuggerPaused(event);
-          break;
-        case DEBUG_RESUMED:
-          this.delegate.onDebuggerResumed(event);
-          break;
-        case "RNIDE_pong":
-          if (this.pingResolve) {
-            this.pingResolve(true);
-          } else {
-            Logger.warn("[DEBUG SESSION] Received unexpected pong event");
-          }
-          break;
-        case "RNIDE_profilingCPUStarted":
-          this.delegate.onProfilingCPUStarted(event);
-          break;
-        case "RNIDE_profilingCPUStopped":
-          this.delegate.onProfilingCPUStopped(event);
-          break;
-        default:
-          // ignore other events
-          break;
-      }
-    });
+    this.disposables.push(
+      debug.onDidTerminateDebugSession((session) => {
+        if (session.id === this.jsDebugSession?.id) {
+          this.delegate.onDebugSessionTerminated?.();
+        }
+      })
+    );
+    this.disposables.push(
+      debug.onDidReceiveDebugSessionCustomEvent((event) => {
+        switch (event.event) {
+          case DEBUG_CONSOLE_LOG:
+            this.delegate.onConsoleLog?.(event);
+            break;
+          case DEBUG_PAUSED:
+            this.delegate.onDebuggerPaused?.(event);
+            break;
+          case DEBUG_RESUMED:
+            this.delegate.onDebuggerResumed?.(event);
+            break;
+          case "RNIDE_pong":
+            if (this.pingResolve) {
+              this.pingResolve();
+            } else {
+              Logger.warn("[DEBUG SESSION] Received unexpected pong event");
+            }
+            break;
+          case "RNIDE_profilingCPUStarted":
+            this.delegate.onProfilingCPUStarted?.(event);
+            break;
+          case "RNIDE_profilingCPUStopped":
+            this.delegate.onProfilingCPUStopped?.(event);
+            break;
+          default:
+            // ignore other events
+            break;
+        }
+      })
+    );
   }
 
   public async reconnectJSDebuggerIfNeeded(metro: Metro) {
@@ -78,10 +86,10 @@ export class DebugSession implements Disposable {
     return true;
   }
 
-  private async startInternal() {
+  public async startParentDebugSession() {
     let didStartHandler: Disposable | null = debug.onDidStartDebugSession((session) => {
       if (session.type === REACT_NATIVE_SESSION_TYPE) {
-        this.vscSession = session;
+        this.parentDebugSession = session;
         didStartHandler?.dispose();
         didStartHandler = null;
       }
@@ -91,7 +99,7 @@ export class DebugSession implements Disposable {
         undefined,
         {
           type: REACT_NATIVE_SESSION_TYPE,
-          name: "React Native Preview Debugger",
+          name: "Radon IDE Debugger",
           request: "attach",
         },
         {
@@ -105,9 +113,10 @@ export class DebugSession implements Disposable {
       if (debugStarted) {
         // NOTE: this is safe, because `debugStarted` means the session started successfully,
         // and we set the session in the `onDidStartDebugSession` handler
-        assert(this.vscSession, "Expected debug session to be set");
+        assert(this.parentDebugSession, "Expected debug session to be set");
         return true;
       }
+      return false;
     } finally {
       didStartHandler?.dispose();
     }
@@ -115,16 +124,8 @@ export class DebugSession implements Disposable {
 
   public static start(debugEventDelegate: DebugSessionDelegate) {
     const debugSession = new DebugSession(debugEventDelegate);
-    debugSession.startInternal();
+    debugSession.startParentDebugSession();
     return debugSession;
-  }
-
-  public async getOriginalSource(
-    fileName: string,
-    line0Based: number,
-    column0Based: number
-  ): Promise<{ sourceURL: string; lineNumber1Based: number; columnNumber0Based: number }> {
-    return await this.session.customRequest("source", { fileName, line0Based, column0Based });
   }
 
   public async restart() {
@@ -133,19 +134,20 @@ export class DebugSession implements Disposable {
   }
 
   private async stop() {
-    this.vscSession && (await debug.stopDebugging(this.vscSession));
-    this.vscSession = undefined;
+    if (this.parentDebugSession) {
+      await debug.stopDebugging(this.parentDebugSession);
+    } else {
+      await debug.stopDebugging(this.jsDebugSession);
+    }
+    this.parentDebugSession = undefined;
+    this.jsDebugSession = undefined;
     this.wasConnectedToCDP = false;
     this.currentWsTarget = undefined;
   }
 
-  /**
-  This method is async to allow for awaiting it during restarts, please keep in mind tho that
-  build in vscode dispose system ignores async keyword and works synchronously.
-  */
-  public async dispose() {
-    this.vscSession && (await debug.stopDebugging(this.vscSession));
-    this.debugEventsListener.dispose();
+  public dispose() {
+    this.stop();
+    disposeAll(this.disposables);
   }
 
   public async connectJSDebugger(metro: Metro) {
@@ -175,13 +177,13 @@ export class DebugSession implements Disposable {
 
   public resumeDebugger() {
     commands.executeCommand("workbench.action.debug.continue", undefined, {
-      sessionId: this.vscSession?.id,
+      sessionId: this.jsDebugSession?.id,
     });
   }
 
   public stepOverDebugger() {
     commands.executeCommand("workbench.action.debug.stepOver", undefined, {
-      sessionId: this.vscSession?.id,
+      sessionId: this.jsDebugSession?.id,
     });
   }
 
@@ -212,41 +214,36 @@ export class DebugSession implements Disposable {
     });
   }
 
-  public async pingCurrentWsTarget(): Promise<boolean> {
-    this.session.customRequest("RNIDE_ping");
-    return new Promise((resolve, _) => {
-      this.pingResolve = (value) => {
-        clearTimeout(this.pingTimeout);
-        resolve(value);
+  public async pingCurrentWsTarget() {
+    this.jsDebugSession?.customRequest("RNIDE_ping");
+    const { promise, resolve } = Promise.withResolvers<boolean>();
+    const timeout = setTimeout(() => resolve(false), PING_TIMEOUT);
+    let prevResolve = this.pingResolve;
+    let currentResolve = () => {
+      clearTimeout(timeout);
+      resolve(true);
+      prevResolve?.();
+      if (this.pingResolve === currentResolve) {
         this.pingResolve = undefined;
-        this.pingTimeout = undefined;
-      };
-      this.pingTimeout = setTimeout(() => {
-        this.pingResolve?.(false);
-      }, PING_TIMEOUT);
-    });
+      }
+    };
+    this.pingResolve = currentResolve;
+    return promise;
   }
 
   public async startProfilingCPU() {
-    await this.session.customRequest("RNIDE_startProfiling");
+    await this.jsDebugSession?.customRequest("RNIDE_startProfiling");
   }
 
   public async stopProfilingCPU() {
-    await this.session.customRequest("RNIDE_stopProfiling");
+    await this.jsDebugSession?.customRequest("RNIDE_stopProfiling");
   }
 
   private async connectCDPDebugger(cdpConfiguration: CDPConfiguration) {
-    await this.session.customRequest("RNIDE_connect_cdp_debugger", cdpConfiguration);
+    await this.jsDebugSession?.customRequest("RNIDE_connect_cdp_debugger", cdpConfiguration);
   }
 
   public async appendDebugConsoleEntry(message: string, type: string, source?: DebugSource) {
-    await this.session.customRequest("RNIDE_log_message", { message, type, source });
-  }
-
-  private get session() {
-    if (!this.vscSession) {
-      throw new Error("Debugger not started");
-    }
-    return this.vscSession;
+    await this.parentDebugSession?.customRequest("RNIDE_log_message", { message, type, source });
   }
 }

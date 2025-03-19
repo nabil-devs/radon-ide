@@ -1,5 +1,5 @@
 import { Disposable } from "vscode";
-import { Metro } from "./metro";
+import { Metro, MetroLauncher } from "./metro";
 import { Devtools } from "./devtools";
 import { DeviceBase } from "../devices/DeviceBase";
 import { Logger } from "../Logger";
@@ -64,7 +64,7 @@ export class DeviceSession implements Disposable {
   constructor(
     private readonly device: DeviceBase,
     private readonly devtools: Devtools,
-    private readonly metro: Metro,
+    private readonly metro: MetroLauncher,
     readonly dependencyManager: DependencyManager,
     readonly buildCache: BuildCache,
     private readonly debugEventDelegate: DebugSessionDelegate,
@@ -87,16 +87,11 @@ export class DeviceSession implements Disposable {
           break;
       }
     });
-
-    // we start debug session here to be able to leverage the functionality of debug console
-    // the session is not connected to the js debugger here yet and that step can only happen,
-    // after app is running.
-    this.debugSession = DebugSession.start(this.debugEventDelegate);
   }
 
-  /** 
+  /**
   This method is async to allow for awaiting it during restarts, please keep in mind tho that
-  build in vscode dispose system ignores async keyword and works synchronously. 
+  build in vscode dispose system ignores async keyword and works synchronously.
   */
   public async dispose() {
     await this.debugSession?.dispose();
@@ -276,6 +271,8 @@ export class DeviceSession implements Disposable {
     { cleanBuild, previewReadyCallback }: StartOptions
   ) {
     this.deviceSettings = deviceSettings;
+    this.debugSession = new DebugSession(this.debugEventDelegate);
+    await this.debugSession.startParentDebugSession();
     await this.waitForMetroReady();
     // TODO(jgonet): Build and boot simultaneously, with predictable state change updates
     await this.bootDevice(deviceSettings);
