@@ -208,6 +208,11 @@
           "id": "RadonIDEToolNetwork",
           "title": "Network",
           "icon": "assets/network.svg"
+        },
+        {
+          "id": "RadonIDEToolReactDevTools",
+          "title": "React DevTools",
+          "icon": "assets/react-devtools.svg"
         }
       ]
     },
@@ -258,6 +263,14 @@
           "id": "RNIDE.Tool.ReactQueryDevTools.view",
           "name": "",
           "when": "RNIDE.Tool.ReactQueryDevTools.available && RNIDE.panelIsOpen"
+        }
+      ],
+      "RadonIDEToolReactDevTools": [
+        {
+          "type": "webview",
+          "id": "RNIDE.Tool.ReactDevTools.view",
+          "name": "",
+          "when": "RNIDE.Tool.ReactDevTools.available && RNIDE.panelIsOpen"
         }
       ]
     },
@@ -652,8 +665,9 @@
     "build:react-query-devtools-ui": "rm -rf dist/react-query-devtools && cp -R ../radon-ide-react-query-webui/artifacts dist/react-query-devtools",
     "build:chrome-devtools-ui": "rm -rf dist/network-devtools-frontend && cp -R ../chrome-devtools-ui/build_artifacts/RadonIDE/gen/front_end/ dist/network-devtools-frontend",
     "build:third-party": "npm run build:chrome-devtools-ui && npm run build:redux-devtools-ui && npm run build:react-query-devtools-ui",
-    "build:webview": "vite build --mode production && cp ./node_modules/@vscode/codicons/dist/codicon.* dist/. && npm run build:network-webview",
+    "build:webview": "vite build --mode production && cp ./node_modules/@vscode/codicons/dist/codicon.* dist/. && npm run build:network-webview && npm run build:react-devtools-webview",
     "build:network-webview": "cd ./src/webview/network && vite build --mode production",
+    "build:react-devtools-webview": "cd ./src/webview/react-devtools && vite build --mode production",
     "build:extension-debug": "npm run prepare:fake_editor && npm run fetch:third-party && node ./scripts/buildExtensionCode.mjs debug && npm run build:third-party",
     "build:extension": "npm run prepare:fake_editor && node ./scripts/buildExtensionCode.mjs production && npm run build:third-party",
     "build:sim-server-debug": "bash ./scripts/build-sim-server-debug.sh dist",
@@ -664,7 +678,8 @@
     "prepare:fake_editor": "mkdir -p dist && cp react-fake-editor-executable dist/atom",
     "watch:extension": "vite",
     "watch:network-webview": "cd ./src/webview/network && vite",
-    "package": "rm -rf dist/* && cp ../vscode-js-debug/dist/src/chromehash_bg.wasm dist/ && npm run build:dist",
+    "watch:react-devtools-webview": "cd ./src/webview/react-devtools && vite",
+    "package": "rm -rf dist/ && npm run build:dist",
     "lint": "eslint src/**/*.\\{ts,tsx,js,jsx\\} && prettier --check src",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write --list-different src",
