@@ -61,7 +61,7 @@ export class Devtools implements Disposable {
       ws.on("message", (message: string) => {
         try {
           const { event, payload } = JSON.parse(message);
-          Logger.log("Devtools message", event);
+          Logger.log("Devtools message in devtools.ts", event);
           this.listeners.forEach((listener) => listener(event, payload));
         } catch (e) {
           Logger.error("Error while handling devtools websocket message", e);

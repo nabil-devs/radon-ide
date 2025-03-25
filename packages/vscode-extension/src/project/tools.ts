@@ -20,6 +20,10 @@ import {
 import { getTelemetryReporter } from "../utilities/telemetry";
 import { RenderOutlinesPlugin } from "../plugins/render-outlines/render-outlines-plugin";
 import { RENDER_OUTLINES_PLUGIN_ID } from "../common/RenderOutlines";
+import {
+  ReactDevtoolsPlugin,
+  REACT_DEVTOOLS_PLUGIN_ID,
+} from "../plugins/react-devtools-plugin/react-devtools-plugin";
 
 const TOOLS_SETTINGS_KEY = "tools_settings";
 
@@ -28,7 +32,8 @@ export type ToolKey =
   | typeof REACT_QUERY_PLUGIN_ID
   | typeof NETWORK_PLUGIN_ID
   | typeof REDUX_PLUGIN_ID
-  | typeof RENDER_OUTLINES_PLUGIN_ID;
+  | typeof RENDER_OUTLINES_PLUGIN_ID
+  | typeof REACT_DEVTOOLS_PLUGIN_ID;
 
 export interface ToolPlugin extends Disposable {
   id: ToolKey;
@@ -69,6 +74,7 @@ export class ToolsManager implements Disposable {
     this.plugins.set(REDUX_PLUGIN_ID, new ReduxDevtoolsPlugin(devtools));
     this.plugins.set(NETWORK_PLUGIN_ID, new NetworkPlugin(devtools));
     this.plugins.set(RENDER_OUTLINES_PLUGIN_ID, new RenderOutlinesPlugin(devtools));
+    this.plugins.set(REACT_DEVTOOLS_PLUGIN_ID, new ReactDevtoolsPlugin(devtools));
 
     devtools.addListener(this.devtoolsListener);
     this.handleStateChange();
