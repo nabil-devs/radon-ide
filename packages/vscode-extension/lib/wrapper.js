@@ -20,7 +20,7 @@ export function registerNavigationPlugin(name, plugin) {
   navigationPlugins.push({ name, plugin });
 }
 
-const devtoolPlugins = new Set(["network"]);
+const devtoolPlugins = new Set(["network", "react-devtools"]);
 let devtoolPluginsChanged = undefined;
 export function registerDevtoolPlugin(name) {
   devtoolPlugins.add(name);
@@ -34,6 +34,7 @@ const InternalImports = {
     return require("./preview").PREVIEW_APP_KEY;
   },
   get enableNetworkInspect() {
+    console.log("enableNetworkInspectXD");
     return require("./network").enableNetworkInspect;
   },
   get reduxDevtoolsExtensionCompose() {
@@ -41,6 +42,10 @@ const InternalImports = {
   },
   get updateInstrumentationOptions() {
     return require("./instrumentation").updateInstrumentationOptions;
+  },
+  get enableReactDevtoolProfiler() {
+    console.log("enableReactDevtoolProfilerXD");
+    return require("./react-devtools").enableReactDevtoolProfiler;
   },
 };
 
@@ -365,6 +370,15 @@ export function AppWrapper({ children, initialProps, fabric }) {
     "RNIDE_enableNetworkInspect",
     (payload) => {
       InternalImports.enableNetworkInspect(devtoolsAgent, payload);
+    },
+    []
+  );
+
+  useAgentListener(
+    devtoolsAgent,
+    "RNIDE_enableReactDevtoolProfiler",
+    (payload) => {
+      InternalImports.enableReactDevtoolProfiler(devtoolsAgent, payload);
     },
     []
   );
