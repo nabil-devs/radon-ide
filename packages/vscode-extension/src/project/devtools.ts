@@ -13,32 +13,44 @@ import {
   Wall,
 } from "../../third-party/react-devtools/headless";
 
-// Define event names as a const array to avoid duplication
-export const DEVTOOLS_EVENTS = [
-  "RNIDE_appReady",
-  "RNIDE_navigationChanged",
-  "RNIDE_fastRefreshStarted",
-  "RNIDE_fastRefreshComplete",
-  "RNIDE_openPreviewResult",
-  "RNIDE_inspectData",
-  "RNIDE_devtoolPluginsChanged",
-  "RNIDE_rendersReported",
-  "RNIDE_pluginMessage",
-  "RNIDE_isProfilingReact",
-] as const;
+export interface RadonInspectorBridgeEvents {
+  appReady: [];
+  navigationChanged: [{ displayName: string; id: string }];
+  fastRefreshStarted: [];
+  fastRefreshComplete: [];
+  openPreviewResult: [{ previewId: string; error?: string }];
+  inspectData: [{ id: number }];
+  devtoolPluginsChanged: [{ plugins: string[] }];
+  rendersReported: [any];
+  pluginMessage: [{ scope: string; type: string; data: any }];
+  isProfilingReact: [boolean];
+}
 
-// Define the payload types for each event
-export interface DevtoolsEvents {
-  RNIDE_appReady: [];
-  RNIDE_navigationChanged: [{ displayName: string; id: string }];
-  RNIDE_fastRefreshStarted: [];
-  RNIDE_fastRefreshComplete: [];
-  RNIDE_openPreviewResult: [{ previewId: string; error?: string }];
-  RNIDE_inspectData: [{ id: number }];
-  RNIDE_devtoolPluginsChanged: [{ plugins: string[] }];
-  RNIDE_rendersReported: [any];
-  RNIDE_pluginMessage: [{ scope: string; type: string; data: any }];
-  RNIDE_isProfilingReact: [boolean];
+type RadonInspectorEventName = keyof RadonInspectorBridgeEvents;
+
+export const INSPECTOR_EVENT_NAMES: RadonInspectorEventName[] = [
+  "appReady",
+  "navigationChanged",
+  "fastRefreshStarted",
+  "fastRefreshComplete",
+  "openPreviewResult",
+  "inspectData",
+  "devtoolPluginsChanged",
+  "rendersReported",
+  "pluginMessage",
+  "isProfilingReact",
+];
+
+export interface RadonInspectorBridge {
+  sendPluginMessage(scope: string, type: string, data: any): void;
+  sendInspectRequest(x: number, y: number, id: number, requestStack: boolean): void;
+  sendOpenNavigationRequest(id: string): void;
+  sendOpenPreviewRequest(previewId: string): void;
+  sendShowStorybookStoryRequest(componentTitle: string, storyName: string): void;
+  onEvent<K extends keyof RadonInspectorBridgeEvents>(
+    event: K,
+    listener: (...payload: RadonInspectorBridgeEvents[K]) => void
+  ): Disposable;
 }
 
 function filePathForProfile() {
@@ -47,12 +59,13 @@ function filePathForProfile() {
   return filePath;
 }
 
-export class Devtools implements Disposable {
+export class Devtools implements RadonInspectorBridge, Disposable {
   private _port = 0;
   private server: any;
   private socket?: WebSocket;
   private startPromise: Promise<void> | undefined;
-  private listeners: Map<keyof DevtoolsEvents, Array<(...payload: any) => void>> = new Map();
+  private listeners: Map<keyof RadonInspectorBridgeEvents, Array<(...payload: any) => void>> =
+    new Map();
   private store: Store | undefined;
 
   public get port() {
@@ -72,7 +85,7 @@ export class Devtools implements Disposable {
 
   public async appReady() {
     const { resolve, promise } = Promise.withResolvers<void>();
-    const listener = this.onEvent("RNIDE_appReady", () => {
+    const listener = this.onEvent("appReady", () => {
       resolve();
       listener.dispose();
     });
@@ -130,16 +143,16 @@ export class Devtools implements Disposable {
       });
 
       // Register bridge listeners for ALL custom event types
-      for (const event of DEVTOOLS_EVENTS) {
-        bridge.addListener(event, (payload) => {
-          this.listeners.get(event)?.forEach((listener) => listener(payload));
+      for (const eventName of INSPECTOR_EVENT_NAMES) {
+        bridge.addListener(`RNIDE_${eventName}`, (payload) => {
+          this.listeners.get(eventName)?.forEach((listener) => listener(payload));
         });
       }
 
       // Register for isProfiling event on the profiler store
       store.profilerStore.addListener("isProfiling", () => {
         this.listeners
-          .get("RNIDE_isProfilingReact")
+          .get("isProfilingReact")
           // @ts-ignore - isProfilingBasedOnUserInput exists but types are outdated
           ?.forEach((listener) => listener(store.profilerStore.isProfilingBasedOnUserInput));
       });
@@ -185,17 +198,37 @@ export class Devtools implements Disposable {
     this.server?.close();
   }
 
-  public send(event: string, payload?: any) {
-    this.socket?.send(JSON.stringify({ event, payload }));
+  private send(event: string, payload?: any) {
+    this.socket?.send(JSON.stringify({ event: `RNIDE_${event}`, payload }));
   }
 
-  public onEvent<K extends keyof DevtoolsEvents>(
-    eventName: K,
-    listener: (...payload: DevtoolsEvents[K]) => void
+  public sendPluginMessage(scope: string, type: string, data: any) {
+    this.send("pluginMessage", { scope, type, data });
+  }
+
+  public sendInspectRequest(x: number, y: number, id: number, requestStack: boolean): void {
+    this.send("inspect", { x, y, id, requestStack });
+  }
+
+  public sendOpenNavigationRequest(id: string): void {
+    this.send("openNavigation", { id });
+  }
+
+  public sendOpenPreviewRequest(previewId: string): void {
+    this.send("openPreview", { previewId });
+  }
+
+  public sendShowStorybookStoryRequest(componentTitle: string, storyName: string): void {
+    this.send("showStorybookStory", { componentTitle, storyName });
+  }
+
+  public onEvent<K extends keyof RadonInspectorBridgeEvents>(
+    event: K,
+    listener: (...payload: RadonInspectorBridgeEvents[K]) => void
   ): Disposable {
-    const listeners = this.listeners.get(eventName);
+    const listeners = this.listeners.get(event);
     if (!listeners) {
-      this.listeners.set(eventName, [listener]);
+      this.listeners.set(event, [listener]);
     } else {
       const index = listeners.indexOf(listener);
       if (index === -1) {
@@ -204,7 +237,7 @@ export class Devtools implements Disposable {
     }
     return {
       dispose: () => {
-        const listenersToClean = this.listeners.get(eventName);
+        const listenersToClean = this.listeners.get(event);
         if (listenersToClean) {
           const index = listenersToClean.indexOf(listener as (...payload: any) => void);
           if (index !== -1) {

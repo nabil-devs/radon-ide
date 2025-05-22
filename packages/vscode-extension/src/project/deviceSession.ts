@@ -1,7 +1,7 @@
 import _ from "lodash";
 import { commands, DebugSessionCustomEvent, Disposable, window } from "vscode";
 import { MetroLauncher, MetroDelegate } from "./metro";
-import { Devtools } from "./devtools";
+import { Devtools, RadonInspectorBridge } from "./devtools";
 import { DeviceBase } from "../devices/DeviceBase";
 import { Logger } from "../Logger";
 import {
@@ -64,7 +64,7 @@ export class DeviceSession
   private toolsManager: ToolsManager;
   private inspectCallID = 7621;
   private maybeBuildResult: BuildResult | undefined;
-  public devtools; // TODO: make this private!
+  private devtools: Devtools;
   private debugSession: DebugSession;
   private disposableBuild: DisposableBuild<BuildResult> | undefined;
   private buildManager: BuildManager;
@@ -99,6 +99,10 @@ export class DeviceSession
     return this.device.platform;
   }
 
+  public get inspectorBridge(): RadonInspectorBridge {
+    return this.devtools;
+  }
+
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly device: DeviceBase,
@@ -106,7 +110,7 @@ export class DeviceSession
   ) {
     this.devtools = this.makeDevtools();
     this.metro = new MetroLauncher(this.devtools, this);
-    this.toolsManager = new ToolsManager(this.devtools, this);
+    this.toolsManager = new ToolsManager(this.inspectorBridge, this);
 
     this.buildManager = new BuildManager(
       applicationContext.dependencyManager,
@@ -242,13 +246,13 @@ export class DeviceSession
 
   private makeDevtools() {
     const devtools = new Devtools();
-    devtools.onEvent("RNIDE_appReady", () => {
+    devtools.onEvent("appReady", () => {
       Logger.debug("App ready");
     });
     // We don't need to store event disposables here as they are tied to the lifecycle
     // of the devtools instance, which is disposed when we recreate the devtools or
     // when the device session is disposed
-    devtools.onEvent("RNIDE_navigationChanged", (payload: NavigationHistoryItem) => {
+    devtools.onEvent("navigationChanged", (payload: NavigationHistoryItem) => {
       const backTargetId = this.navigationBackTarget?.id;
       if (backTargetId === payload.id) {
         // we are navigating back, remove all items from history that are before the back target
@@ -271,15 +275,15 @@ export class DeviceSession
       ].slice(0, MAX_URL_HISTORY_SIZE);
       this.emitStateChange();
     });
-    devtools.onEvent("RNIDE_fastRefreshStarted", () => {
+    devtools.onEvent("fastRefreshStarted", () => {
       this.status = "refreshing";
       this.emitStateChange();
     });
-    devtools.onEvent("RNIDE_fastRefreshComplete", () => {
+    devtools.onEvent("fastRefreshComplete", () => {
       this.status = "running";
       this.emitStateChange();
     });
-    devtools.onEvent("RNIDE_isProfilingReact", (isProfiling) => {
+    devtools.onEvent("isProfilingReact", (isProfiling) => {
       if (this.profilingReactState !== "saving") {
         this.profilingReactState = isProfiling ? "profiling" : "stopped";
         this.emitStateChange();
@@ -884,29 +888,29 @@ export class DeviceSession
     callback: (inspectData: any) => void
   ) {
     const id = this.inspectCallID++;
-    const listener = this.devtools.onEvent("RNIDE_inspectData", (payload) => {
+    const listener = this.devtools.onEvent("inspectData", (payload) => {
       if (payload.id === id) {
         listener.dispose();
         callback(payload);
       }
     });
-    this.devtools.send("RNIDE_inspect", { x: xRatio, y: yRatio, id, requestStack });
+    this.inspectorBridge.sendInspectRequest(xRatio, yRatio, id, requestStack);
   }
 
   public openNavigation(id: string) {
-    this.devtools.send("RNIDE_openNavigation", { id });
+    this.inspectorBridge.sendOpenNavigationRequest(id);
   }
 
   public navigateHome() {
     if (this.navigationHomeTarget) {
-      this.devtools.send("RNIDE_openNavigation", { id: this.navigationHomeTarget.id });
+      this.inspectorBridge.sendOpenNavigationRequest(this.navigationHomeTarget.id);
     }
   }
 
   public navigateBack() {
     if (this.navigationHistory.length > 1) {
       this.navigationBackTarget = this.navigationHistory[1];
-      this.devtools.send("RNIDE_openNavigation", { id: this.navigationBackTarget.id });
+      this.inspectorBridge.sendOpenNavigationRequest(this.navigationBackTarget.id);
     }
   }
 
@@ -916,7 +920,7 @@ export class DeviceSession
 
   public async startPreview(previewId: string) {
     const { resolve, reject, promise } = Promise.withResolvers<void>();
-    const listener = this.devtools.onEvent("RNIDE_openPreviewResult", (payload) => {
+    const listener = this.devtools.onEvent("openPreviewResult", (payload) => {
       if (payload.previewId === previewId) {
         listener.dispose();
         if (payload.error) {
@@ -926,7 +930,7 @@ export class DeviceSession
         }
       }
     });
-    this.devtools.send("RNIDE_openPreview", { previewId });
+    this.inspectorBridge.sendOpenPreviewRequest(previewId);
     return promise;
   }
 
@@ -944,6 +948,10 @@ export class DeviceSession
 
   public async updateToolEnabledState(toolName: ToolKey, enabled: boolean) {
     this.toolsManager.updateToolEnabledState(toolName, enabled);
+  }
+
+  public async openStorybookStory(componentTitle: string, storyName: string) {
+    await this.inspectorBridge.sendShowStorybookStoryRequest(componentTitle, storyName);
   }
 
   public async openTool(toolName: ToolKey) {
