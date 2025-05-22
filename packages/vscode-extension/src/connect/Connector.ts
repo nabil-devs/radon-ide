@@ -105,6 +105,13 @@ export class Connector implements Disposable {
         this.updateStatusBarItem();
         this.maybeStartScanner();
       },
+      onBindingCalled: (event) => {
+        const { name, payload } = event.body as { name: string; payload: any };
+        if (name === "__radon_binding") {
+          console.log("BININD CSLLED", payload);
+          debugSession.postMessage({ title: "hello" });
+        }
+      },
     });
     const isUsingNewDebugger = metro.isUsingNewDebugger;
     if (!isUsingNewDebugger) {
