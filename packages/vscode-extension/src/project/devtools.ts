@@ -18,19 +18,6 @@ import {
   RadonInspectorEventName,
 } from "./bridge";
 
-export const INSPECTOR_EVENT_NAMES: RadonInspectorEventName[] = [
-  "appReady",
-  "navigationChanged",
-  "fastRefreshStarted",
-  "fastRefreshComplete",
-  "openPreviewResult",
-  "inspectData",
-  "devtoolPluginsChanged",
-  "rendersReported",
-  "pluginMessage",
-  "isProfilingReact",
-];
-
 function filePathForProfile() {
   const fileName = `profile-${Date.now()}.reactprofile`;
   const filePath = path.join(os.tmpdir(), fileName);
@@ -120,12 +107,10 @@ export class Devtools implements RadonInspectorBridge, Disposable {
         }
       });
 
-      // Register bridge listeners for ALL custom event types
-      for (const eventName of INSPECTOR_EVENT_NAMES) {
-        bridge.addListener(`RNIDE_${eventName}`, (payload) => {
-          this.listeners.get(eventName)?.forEach((listener) => listener(payload));
-        });
-      }
+      bridge.addListener("RNIDE_message", (payload: any) => {
+        const { type, data } = payload;
+        this.listeners.get(type)?.forEach((listener) => listener(data));
+      });
 
       // Register for isProfiling event on the profiler store
       store.profilerStore.addListener("isProfiling", () => {
@@ -176,12 +161,13 @@ export class Devtools implements RadonInspectorBridge, Disposable {
     this.server?.close();
   }
 
-  private send(event: string, payload?: any) {
-    this.socket?.send(JSON.stringify({ event: `RNIDE_${event}`, payload }));
+  private send(type: string, data?: any) {
+    console.log("XBRIDGE SENDZ", type, data, this.socket);
+    this.socket?.send(JSON.stringify({ event: "RNIDE_message", type, data }));
   }
 
-  public sendPluginMessage(scope: string, type: string, data: any) {
-    this.send("pluginMessage", { scope, type, data });
+  public sendPluginMessage(pluginId: string, type: string, data: any) {
+    this.send("pluginMessage", { pluginId, type, data });
   }
 
   public sendInspectRequest(x: number, y: number, id: number, requestStack: boolean): void {

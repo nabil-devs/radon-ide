@@ -121,7 +121,7 @@ export class NetworkPlugin implements ToolPlugin {
       commands.executeCommand("setContext", `RNIDE.Tool.Network.available`, true);
       this.devtoolsListeners.push(
         this.inspectorBridge.onEvent("pluginMessage", (payload) => {
-          if (payload.scope === "network") {
+          if (payload.pluginId === "network") {
             this.websocketBackend.broadcast(payload.data);
           }
         })

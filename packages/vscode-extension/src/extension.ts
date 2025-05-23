@@ -322,6 +322,7 @@ function extensionActivated(context: ExtensionContext) {
   if (context.extensionMode === ExtensionMode.Development) {
     // "Connector" implements experimental functionality that is available in development mode only
     Connector.getInstance().start();
+    commands.executeCommand("RNIDE.openPanel");
   }
 }
 

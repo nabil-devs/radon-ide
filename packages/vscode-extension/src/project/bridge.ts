@@ -9,7 +9,7 @@ export interface RadonInspectorBridgeEvents {
   inspectData: [{ id: number }];
   devtoolPluginsChanged: [{ plugins: string[] }];
   rendersReported: [any];
-  pluginMessage: [{ scope: string; type: string; data: any }];
+  pluginMessage: [{ pluginId: string; type: string; data: any }];
   isProfilingReact: [boolean];
 }
 
