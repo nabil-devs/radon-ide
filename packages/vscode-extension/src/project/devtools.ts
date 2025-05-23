@@ -12,21 +12,11 @@ import {
   Store,
   Wall,
 } from "../../third-party/react-devtools/headless";
-
-export interface RadonInspectorBridgeEvents {
-  appReady: [];
-  navigationChanged: [{ displayName: string; id: string }];
-  fastRefreshStarted: [];
-  fastRefreshComplete: [];
-  openPreviewResult: [{ previewId: string; error?: string }];
-  inspectData: [{ id: number }];
-  devtoolPluginsChanged: [{ plugins: string[] }];
-  rendersReported: [any];
-  pluginMessage: [{ scope: string; type: string; data: any }];
-  isProfilingReact: [boolean];
-}
-
-type RadonInspectorEventName = keyof RadonInspectorBridgeEvents;
+import {
+  RadonInspectorBridge,
+  RadonInspectorBridgeEvents,
+  RadonInspectorEventName,
+} from "./bridge";
 
 export const INSPECTOR_EVENT_NAMES: RadonInspectorEventName[] = [
   "appReady",
@@ -40,18 +30,6 @@ export const INSPECTOR_EVENT_NAMES: RadonInspectorEventName[] = [
   "pluginMessage",
   "isProfilingReact",
 ];
-
-export interface RadonInspectorBridge {
-  sendPluginMessage(scope: string, type: string, data: any): void;
-  sendInspectRequest(x: number, y: number, id: number, requestStack: boolean): void;
-  sendOpenNavigationRequest(id: string): void;
-  sendOpenPreviewRequest(previewId: string): void;
-  sendShowStorybookStoryRequest(componentTitle: string, storyName: string): void;
-  onEvent<K extends keyof RadonInspectorBridgeEvents>(
-    event: K,
-    listener: (...payload: RadonInspectorBridgeEvents[K]) => void
-  ): Disposable;
-}
 
 function filePathForProfile() {
   const fileName = `profile-${Date.now()}.reactprofile`;

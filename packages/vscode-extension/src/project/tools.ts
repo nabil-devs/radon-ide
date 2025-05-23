@@ -1,6 +1,6 @@
 import { Disposable } from "vscode";
 import _ from "lodash";
-import { RadonInspectorBridge } from "./devtools";
+import { RadonInspectorBridge } from "./bridge";
 import { extensionContext } from "../utilities/extensionContext";
 import { ToolsState } from "../common/Project";
 import {

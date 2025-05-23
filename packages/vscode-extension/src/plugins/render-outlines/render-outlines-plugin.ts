@@ -6,7 +6,7 @@ import {
   RenderOutlinesEventMap,
   RenderOutlinesInterface,
 } from "../../common/RenderOutlines";
-import { RadonInspectorBridge } from "../../project/devtools";
+import { RadonInspectorBridge } from "../../project/bridge";
 import { ToolPlugin } from "../../project/tools";
 import { disposeAll } from "../../utilities/disposables";
 

@@ -1,7 +1,8 @@
 import _ from "lodash";
 import { commands, DebugSessionCustomEvent, Disposable, window } from "vscode";
 import { MetroLauncher, MetroDelegate } from "./metro";
-import { Devtools, RadonInspectorBridge } from "./devtools";
+import { Devtools } from "./devtools";
+import { RadonInspectorBridge } from "./bridge";
 import { DeviceBase } from "../devices/DeviceBase";
 import { Logger } from "../Logger";
 import {
