@@ -367,7 +367,6 @@ export function AppWrapper({ children, initialProps, fabric }) {
   useEffect(() => {
     if (hasLayout) {
       const appKey = getCurrentScene();
-      console.warn("SOMETHINFG", appKey);
       inspectorBridge.sendMessage({
         type: "appReady",
         data: {
