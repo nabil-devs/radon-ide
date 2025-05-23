@@ -264,7 +264,7 @@
           "type": "webview",
           "id": "RNIDE.Tool.Network.view",
           "name": "",
-          "when": "RNIDE.Tool.Network.available && RNIDE.panelIsOpen"
+          "when": "RNIDE.Tool.Network.available"
         }
       ],
       "RadonIDEToolReduxDevTools": [
@@ -727,6 +727,7 @@
     "postinstall": "patch-package"
   },
   "devDependencies": {
+    "@babel/preset-env": "^7.27.2",
     "@babel/preset-react": "^7.26.3",
     "@eslint/compat": "^1.2.8",
     "@expo/fingerprint": "^0.11.11",
@@ -776,6 +777,7 @@
     "coordinate-parser": "^1.0.7",
     "d3": "^7.9.0",
     "esbuild": "^0.25.2",
+    "esbuild-plugin-babel": "^0.2.3",
     "esbuild-plugin-license": "^1.2.3",
     "eslint": "^9.24.0",
     "eslint-import-resolver-typescript": "^4.3.2",

@@ -1,4 +1,5 @@
-const agent = require("./react_devtools_agent");
+// const agent = require("./react_devtools_agent");
+const agent = globalThis.__radon_agent;
 
 const messageListeners = [];
 
