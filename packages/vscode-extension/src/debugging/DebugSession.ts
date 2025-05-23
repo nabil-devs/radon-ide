@@ -6,6 +6,7 @@ import { sleep } from "../utilities/retry";
 import { startDebugging } from "./startDebugging";
 import { extensionContext } from "../utilities/extensionContext";
 import { Logger } from "../Logger";
+import { RadonInspectorBridge } from "../project/bridge";
 
 const PING_TIMEOUT = 1000;
 

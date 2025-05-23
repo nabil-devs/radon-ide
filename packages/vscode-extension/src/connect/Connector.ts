@@ -6,11 +6,11 @@ import {
   StatusBarItem,
   window,
 } from "vscode";
-import { DebugSession } from "../debugging/DebugSession";
 import { Metro } from "../project/metro";
 import { extensionContext } from "../utilities/extensionContext";
 import { disposeAll } from "../utilities/disposables";
 import { Scanner } from "./Scanner";
+import ConnectSession from "./ConnectSession";
 
 const RADON_CONNECT_ENABLED_KEY = "radon_connect_enabled";
 export const RADON_CONNECT_PORT_KEY = "radon_connect_port";
@@ -19,8 +19,7 @@ export class Connector implements Disposable {
   private static instance: Connector | null = null;
 
   private statusBarItem: StatusBarItem;
-  private debugSession: DebugSession | null = null;
-  private metro: Metro | null = null;
+  public connectSession: ConnectSession | null = null;
   private scanner: Scanner | null = null;
 
   private disposables: Disposable[] = [];
@@ -92,44 +91,28 @@ export class Connector implements Disposable {
   }
 
   private disconnect() {
-    this.metro = null;
-    this.debugSession?.dispose();
-    this.debugSession = null;
+    this.connectSession?.dispose();
+    this.connectSession = null;
   }
 
   private async tryConnectJSDebuggerWithMetro(websocketAddress: string, metro: Metro) {
-    const debugSession = new DebugSession({
-      onDebugSessionTerminated: () => {
-        this.metro = null;
-        this.debugSession = null;
+    const connectSession = new ConnectSession(metro, {
+      onSessionTerminated: () => {
+        if (this.connectSession === connectSession) {
+          this.connectSession = null;
+        }
+        connectSession.dispose();
         this.updateStatusBarItem();
         this.maybeStartScanner();
       },
-      onBindingCalled: (event) => {
-        const { name, payload } = event.body as { name: string; payload: any };
-        if (name === "__radon_binding") {
-          console.log("BININD CSLLED", payload);
-          debugSession.postMessage({ title: "hello" });
-        }
-      },
     });
-    const isUsingNewDebugger = metro.isUsingNewDebugger;
-    if (!isUsingNewDebugger) {
-      throw new Error("Auto-connect is only supported for the new React Native debugger");
-    }
-    const success = await debugSession.startJSDebugSession({
-      websocketAddress,
-      displayDebuggerOverlay: true,
-      isUsingNewDebugger,
-      expoPreludeLineCount: metro.expoPreludeLineCount,
-      sourceMapPathOverrides: metro.sourceMapPathOverrides,
-    });
+    const success = await connectSession.start(websocketAddress);
     if (success) {
-      this.metro = metro;
-      this.debugSession = debugSession;
+      this.connectSession?.dispose();
+      this.connectSession = connectSession;
       this.stopScanner();
     } else {
-      debugSession.dispose();
+      connectSession.dispose();
     }
   }
 
@@ -181,9 +164,9 @@ export class Connector implements Disposable {
 
     const enabled = extensionContext.workspaceState.get(RADON_CONNECT_ENABLED_KEY, true);
 
-    if (this.debugSession && this.metro) {
+    if (this.connectSession) {
       this.statusBarItem.text = "Radon IDE $(debug)";
-      markdownText.appendMarkdown("Connected on port " + this.metro.port);
+      markdownText.appendMarkdown("Connected on port " + this.connectSession.port);
       markdownText.appendMarkdown("\n\n");
       markdownText.appendMarkdown("[Disconnect](command:RNIDE.disableRadonConnect)");
       markdownText.appendMarkdown("\n\n");

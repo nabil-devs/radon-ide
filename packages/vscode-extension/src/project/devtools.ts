@@ -12,11 +12,7 @@ import {
   Store,
   Wall,
 } from "../../third-party/react-devtools/headless";
-import {
-  RadonInspectorBridge,
-  RadonInspectorBridgeEvents,
-  RadonInspectorEventName,
-} from "./bridge";
+import { BaseInspectorBridge, RadonInspectorBridgeEvents } from "./bridge";
 
 function filePathForProfile() {
   const fileName = `profile-${Date.now()}.reactprofile`;
@@ -24,13 +20,11 @@ function filePathForProfile() {
   return filePath;
 }
 
-export class Devtools implements RadonInspectorBridge, Disposable {
+export class Devtools extends BaseInspectorBridge implements Disposable {
   private _port = 0;
   private server: any;
   private socket?: WebSocket;
   private startPromise: Promise<void> | undefined;
-  private listeners: Map<keyof RadonInspectorBridgeEvents, Array<(...payload: any) => void>> =
-    new Map();
   private store: Store | undefined;
 
   public get port() {
@@ -109,15 +103,13 @@ export class Devtools implements RadonInspectorBridge, Disposable {
 
       bridge.addListener("RNIDE_message", (payload: any) => {
         const { type, data } = payload;
-        this.listeners.get(type)?.forEach((listener) => listener(data));
+        this.emitEvent(type, data);
       });
 
       // Register for isProfiling event on the profiler store
       store.profilerStore.addListener("isProfiling", () => {
-        this.listeners
-          .get("isProfilingReact")
-          // @ts-ignore - isProfilingBasedOnUserInput exists but types are outdated
-          ?.forEach((listener) => listener(store.profilerStore.isProfilingBasedOnUserInput));
+        // @ts-ignore - isProfilingBasedOnUserInput exists but types are outdated
+        this.emitEvent("isProfilingReact", store.profilerStore.isProfilingBasedOnUserInput);
       });
     });
 
@@ -161,53 +153,7 @@ export class Devtools implements RadonInspectorBridge, Disposable {
     this.server?.close();
   }
 
-  private send(type: string, data?: any) {
-    this.socket?.send(JSON.stringify({ event: "RNIDE_message", payload: { type, data } }));
-  }
-
-  public sendPluginMessage(pluginId: string, type: string, data: any) {
-    this.send("pluginMessage", { pluginId, type, data });
-  }
-
-  public sendInspectRequest(x: number, y: number, id: number, requestStack: boolean): void {
-    this.send("inspect", { x, y, id, requestStack });
-  }
-
-  public sendOpenNavigationRequest(id: string): void {
-    this.send("openNavigation", { id });
-  }
-
-  public sendOpenPreviewRequest(previewId: string): void {
-    this.send("openPreview", { previewId });
-  }
-
-  public sendShowStorybookStoryRequest(componentTitle: string, storyName: string): void {
-    this.send("showStorybookStory", { componentTitle, storyName });
-  }
-
-  public onEvent<K extends keyof RadonInspectorBridgeEvents>(
-    event: K,
-    listener: (...payload: RadonInspectorBridgeEvents[K]) => void
-  ): Disposable {
-    const listeners = this.listeners.get(event);
-    if (!listeners) {
-      this.listeners.set(event, [listener]);
-    } else {
-      const index = listeners.indexOf(listener);
-      if (index === -1) {
-        listeners.push(listener as (...payload: any) => void);
-      }
-    }
-    return {
-      dispose: () => {
-        const listenersToClean = this.listeners.get(event);
-        if (listenersToClean) {
-          const index = listenersToClean.indexOf(listener as (...payload: any) => void);
-          if (index !== -1) {
-            listenersToClean.splice(index, 1);
-          }
-        }
-      },
-    };
+  protected send(message: any) {
+    this.socket?.send(JSON.stringify({ event: "RNIDE_message", payload: message }));
   }
 }

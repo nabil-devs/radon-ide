@@ -254,10 +254,11 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
     // load script from lib/connect_runtime.js and evaluate it
     const runtimeScriptPath = path.join(
       extensionContext.extensionPath,
-      "lib",
+      "dist",
       "connect_runtime.js"
     );
     const runtimeScript = fs.readFileSync(runtimeScriptPath, "utf8");
+    // const runtimeScript = `Goo = class { };\nconsole.log("W00000t", new Goo());\n`;
 
     await tunnel.injectDebuggerCommand({
       method: "Runtime.addBinding",
@@ -266,12 +267,13 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
       },
     });
 
-    await tunnel.injectDebuggerCommand({
+    const result = await tunnel.injectDebuggerCommand({
       method: "Runtime.evaluate",
       params: {
         expression: runtimeScript,
       },
     });
+    console.log("RUNTIME EVAL RESULT", result);
   }
 
   private handleBindingCalled(command: IProtocolCommand) {
