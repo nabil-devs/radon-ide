@@ -15,10 +15,7 @@ const inspectorBridge = {
 };
 
 agent.onmessage = (message) => {
-  console.log("XBRIDGE ONMESSAGE", message);
-  if (message.data) {
-    messageListeners.forEach((listener) => listener(message.data));
-  }
+  messageListeners.forEach((listener) => listener(message));
 };
 
 module.exports = inspectorBridge;

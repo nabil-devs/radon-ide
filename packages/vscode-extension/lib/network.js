@@ -76,7 +76,6 @@ export function setup() {
   }
   setupCompleted = true;
 
-  console.log("XBRIDGE SETUP");
   const messageBridge = new PluginMessageBridge("network");
 
   let enabled = false;

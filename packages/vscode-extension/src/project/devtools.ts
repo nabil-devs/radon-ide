@@ -162,8 +162,7 @@ export class Devtools implements RadonInspectorBridge, Disposable {
   }
 
   private send(type: string, data?: any) {
-    console.log("XBRIDGE SENDZ", type, data, this.socket);
-    this.socket?.send(JSON.stringify({ event: "RNIDE_message", type, data }));
+    this.socket?.send(JSON.stringify({ event: "RNIDE_message", payload: { type, data } }));
   }
 
   public sendPluginMessage(pluginId: string, type: string, data: any) {

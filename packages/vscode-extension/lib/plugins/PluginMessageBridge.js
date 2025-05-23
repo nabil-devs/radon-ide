@@ -9,7 +9,6 @@ export class PluginMessageBridge {
 
   handleMessage = (message) => {
     const { type, data } = message;
-    console.log("XBRIDGE HANDLE MESSAGE", type, data);
     if (type === "pluginMessage" && data.pluginId === this.pluginId) {
       const listeners = this.listeners.get(data.type) || [];
       listeners.forEach((listener) => listener(data.data));
@@ -17,7 +16,6 @@ export class PluginMessageBridge {
   };
 
   sendMessage(type, data) {
-    console.log("XBRIDGE SEND MESSAGE", type, data);
     inspectorBridge.sendMessage({
       type: "pluginMessage",
       data: {
