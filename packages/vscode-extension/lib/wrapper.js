@@ -12,6 +12,7 @@ const {
 } = require("react-native");
 const { storybookPreview } = require("./storybook_helper");
 
+require("./react_devtools_agent"); // needs to be loaded before inspector_bridge is used
 const inspectorBridge = require("./inspector_bridge");
 
 // https://github.com/facebook/react/blob/c3570b158d087eb4e3ee5748c4bd9360045c8a26/packages/react-reconciler/src/ReactWorkTags.js#L62
@@ -41,8 +42,8 @@ const InternalImports = {
   get reduxDevtoolsExtensionCompose() {
     return require("./plugins/redux-devtools").compose;
   },
-  get updateInstrumentationOptions() {
-    return require("./instrumentation").updateInstrumentationOptions;
+  get setupRenderOutlinesPlugin() {
+    return require("./render_outlines").setup;
   },
 };
 
@@ -204,12 +205,12 @@ export function AppWrapper({ children, initialProps, fabric }) {
     });
   });
 
-  const handleRouteListChange = useCallback(
-    (routeList) => {
-      devtoolsAgent?._bridge.send("RNIDE_navigationRouteListUpdated", routeList);
-    },
-    [devtoolsAgent]
-  );
+  const handleRouteListChange = useCallback((routeList) => {
+    inspectorBridge.sendMessage({
+      type: "navigationRouteListUpdated",
+      data: routeList,
+    });
+  }, []);
 
   const useNavigationMainHook = navigationPlugins[0]?.plugin.mainHook || emptyNavigationHook;
   const { requestNavigationChange } = useNavigationMainHook({
@@ -317,9 +318,6 @@ export function AppWrapper({ children, initialProps, fabric }) {
         case "showStorybookStory":
           showStorybookStory(data.componentTitle, data.storyName);
           break;
-        case "updateInstrumentationOptions":
-          InternalImports.updateInstrumentationOptions(data);
-          break;
       }
     };
     inspectorBridge.addMessageListener(listener);
@@ -341,15 +339,7 @@ export function AppWrapper({ children, initialProps, fabric }) {
       });
     };
 
-    InternalImports.updateInstrumentationOptions({
-      reportRenders: (blueprintOutlines) => {
-        inspectorBridge.sendMessage({
-          type: "rendersReported",
-          data: { blueprintOutlines },
-        });
-      },
-    });
-
+    InternalImports.setupRenderOutlinesPlugin();
     InternalImports.setupNetworkPlugin();
 
     const originalErrorHandler = global.ErrorUtils.getGlobalHandler();
