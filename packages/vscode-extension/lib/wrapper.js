@@ -392,7 +392,7 @@ export function AppWrapper({ children, initialProps, fabric }) {
       ref={mainContainerRef}
       style={{ flex: 1 }}
       onLayout={() => {
-        // layoutCallback?.();
+        layoutCallback?.();
         setHasLayout(true);
       }}>
       {children}
