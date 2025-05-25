@@ -23,6 +23,7 @@ import {
   ToolsState,
   ProfilingState,
   NavigationHistoryItem,
+  NavigationRoute,
   DeviceSessionStatus,
 } from "../common/Project";
 import { getLaunchConfiguration } from "../utilities/launchConfiguration";
@@ -45,7 +46,6 @@ type RestartOptions = {
 
 export type DeviceSessionDelegate = {
   onStateChange(state: DeviceSessionState): void;
-  ensureDependenciesAndNodeVersion(): Promise<void>;
 };
 
 export class DeviceBootError extends Error {
@@ -78,7 +78,7 @@ export class DeviceSession
   private profilingCPUState: ProfilingState = "stopped";
   private profilingReactState: ProfilingState = "stopped";
   private navigationHistory: NavigationHistoryItem[] = [];
-  private navigationBackTarget: NavigationHistoryItem | undefined;
+  private navigationRouteList: NavigationRoute[] = [];
   private navigationHomeTarget: NavigationHistoryItem | undefined;
   private logCounter = 0;
   private isDebuggerPaused = false;
@@ -131,6 +131,7 @@ export class DeviceSession
       profilingCPUState: this.profilingCPUState,
       profilingReactState: this.profilingReactState,
       navigationHistory: this.navigationHistory,
+      navigationRouteList: this.navigationRouteList,
       selectedDevice: this.device.deviceInfo,
       previewURL: this.previewURL,
       toolsState: this.toolsManager.getToolsState(),
@@ -149,7 +150,6 @@ export class DeviceSession
     this.hasStaleBuildCache = false;
     this.profilingCPUState = "stopped";
     this.profilingReactState = "stopped";
-    this.navigationBackTarget = undefined;
     this.navigationHomeTarget = undefined;
     this.emitStateChange();
   }
@@ -230,9 +230,7 @@ export class DeviceSession
   onCacheStale = (platform: DevicePlatform) => {
     if (
       platform === this.device.platform &&
-      (this.status === "running" ||
-        this.status === "refreshing" ||
-        this.status === "debuggerPaused")
+      (this.status === "running" || this.status === "refreshing")
     ) {
       // we only consider "stale cache" in a non-error state that happens
       // after the launch phase if complete. Otherwsie, it may be a result of
@@ -254,26 +252,17 @@ export class DeviceSession
     // of the devtools instance, which is disposed when we recreate the devtools or
     // when the device session is disposed
     devtools.onEvent("navigationChanged", (payload: NavigationHistoryItem) => {
-      const backTargetId = this.navigationBackTarget?.id;
-      if (backTargetId === payload.id) {
-        // we are navigating back, remove all items from history that are before the back target
-        const backTargetIndex = this.navigationHistory.findIndex(
-          (record) => record.id === backTargetId
-        );
-        if (backTargetIndex !== -1) {
-          this.navigationHistory = this.navigationHistory.slice(backTargetIndex + 1);
-        }
-      }
-
       if (!this.navigationHomeTarget) {
         this.navigationHomeTarget = payload;
       }
-
-      this.navigationBackTarget = undefined;
       this.navigationHistory = [
         payload,
         ...this.navigationHistory.filter((record) => record.id !== payload.id),
       ].slice(0, MAX_URL_HISTORY_SIZE);
+      this.emitStateChange();
+    });
+    devtools.onEvent("navigationRouteListUpdated", (payload: NavigationRoute[]) => {
+      this.navigationRouteList = payload;
       this.emitStateChange();
     });
     devtools.onEvent("fastRefreshStarted", () => {
@@ -281,6 +270,10 @@ export class DeviceSession
       this.emitStateChange();
     });
     devtools.onEvent("fastRefreshComplete", () => {
+      const ignoredEvents = ["starting", "bundlingError"];
+      if (ignoredEvents.includes(this.status)) {
+        return;
+      }
       this.status = "running";
       this.emitStateChange();
     });
@@ -680,6 +673,34 @@ export class DeviceSession
     Logger.debug("Metro & devtools ready");
   }
 
+  private async ensureDependenciesAndNodeVersion() {
+    if (this.applicationContext.dependencyManager === undefined) {
+      Logger.error(
+        "[PROJECT] Dependency manager not initialized. this code should be unreachable."
+      );
+      throw new Error("[PROJECT] Dependency manager not initialized");
+    }
+
+    const installed =
+      await this.applicationContext.dependencyManager.checkNodeModulesInstallationStatus();
+
+    if (!installed) {
+      Logger.info("Installing node modules");
+      await this.applicationContext.dependencyManager.installNodeModules();
+      Logger.debug("Installing node modules succeeded");
+    } else {
+      Logger.debug("Node modules already installed - skipping");
+    }
+
+    const supportedNodeInstalled =
+      await this.applicationContext.dependencyManager.checkSupportedNodeVersionInstalled();
+    if (!supportedNodeInstalled) {
+      throw new Error(
+        "Node.js was not found, or the version in the PATH does not satisfy minimum version requirements."
+      );
+    }
+  }
+
   public async start() {
     try {
       this.resetStartingState(StartupMessage.InitializingDevice);
@@ -691,7 +712,7 @@ export class DeviceSession
       const cancelToken = new CancelToken();
       this.cancelToken = cancelToken;
 
-      const waitForNodeModules = this.deviceSessionDelegate.ensureDependenciesAndNodeVersion();
+      const waitForNodeModules = this.ensureDependenciesAndNodeVersion();
 
       Logger.debug(`Launching devtools`);
       this.devtools.start();
@@ -909,10 +930,7 @@ export class DeviceSession
   }
 
   public navigateBack() {
-    if (this.navigationHistory.length > 1) {
-      this.navigationBackTarget = this.navigationHistory[1];
-      this.inspectorBridge.sendOpenNavigationRequest(this.navigationBackTarget.id);
-    }
+    this.inspectorBridge.sendOpenNavigationRequest("__BACK__");
   }
 
   public async openDevMenu() {

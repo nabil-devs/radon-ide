@@ -1,8 +1,10 @@
 import { Disposable } from "vscode";
+import { NavigationRoute } from "../common/Project";
 
 export interface RadonInspectorBridgeEvents {
   appReady: [];
   navigationChanged: [{ displayName: string; id: string }];
+  navigationRouteListUpdated: [NavigationRoute[]];
   fastRefreshStarted: [];
   fastRefreshComplete: [];
   openPreviewResult: [{ previewId: string; error?: string }];

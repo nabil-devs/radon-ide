@@ -4,6 +4,7 @@ import fs from "fs";
 import os from "os";
 import { Disposable, Uri } from "vscode";
 import { WebSocketServer, WebSocket } from "ws";
+import { NavigationRoute } from "../common/Project";
 import { Logger } from "../Logger";
 import {
   createBridge,
@@ -12,7 +13,7 @@ import {
   Store,
   Wall,
 } from "../../third-party/react-devtools/headless";
-import { BaseInspectorBridge, RadonInspectorBridgeEvents } from "./bridge";
+import { BaseInspectorBridge } from "./bridge";
 
 function filePathForProfile() {
   const fileName = `profile-${Date.now()}.reactprofile`;

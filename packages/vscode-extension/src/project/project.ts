@@ -171,6 +171,10 @@ export class Project implements Disposable, ProjectInterface, DeviceSessionsMana
     this.updateProjectState(state);
   };
 
+  onInitialized(): void {
+    this.updateProjectState({ initialized: true });
+  }
+
   private recordingTimeout: NodeJS.Timeout | undefined = undefined;
 
   startRecording(): void {
@@ -571,7 +575,7 @@ export class Project implements Disposable, ProjectInterface, DeviceSessionsMana
   }
 
   private updateProjectState(newState: Partial<ProjectState>) {
-    const mergedState = { ...this.projectState, ...newState, initialized: true };
+    const mergedState = { ...this.projectState, ...newState };
     this.projectState = mergedState;
     this.eventEmitter.emit("projectStateChanged", this.projectState);
   }
@@ -579,33 +583,6 @@ export class Project implements Disposable, ProjectInterface, DeviceSessionsMana
   public async updatePreviewZoomLevel(zoom: ZoomLevelType): Promise<void> {
     this.updateProjectState({ previewZoom: zoom });
     extensionContext.workspaceState.update(PREVIEW_ZOOM_KEY, zoom);
-  }
-
-  public async ensureDependenciesAndNodeVersion() {
-    if (this.dependencyManager === undefined) {
-      Logger.error(
-        "[PROJECT] Dependency manager not initialized. this code should be unreachable."
-      );
-      throw new Error("[PROJECT] Dependency manager not initialized");
-    }
-
-    const installed = await this.dependencyManager.checkNodeModulesInstallationStatus();
-
-    if (!installed) {
-      Logger.info("Installing node modules");
-      await this.dependencyManager.installNodeModules();
-      Logger.debug("Installing node modules succeeded");
-    } else {
-      Logger.debug("Node modules already installed - skipping");
-    }
-
-    const supportedNodeInstalled =
-      await this.dependencyManager.checkSupportedNodeVersionInstalled();
-    if (!supportedNodeInstalled) {
-      throw new Error(
-        "Node.js was not found, or the version in the PATH does not satisfy minimum version requirements."
-      );
-    }
   }
 }
 
