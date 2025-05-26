@@ -30,7 +30,7 @@ class DebugSessionInspectorBridge extends BaseInspectorBridge {
 
 export default class ConnectSession implements ToolsDelegate, Disposable {
   private debugSession: DebugSession;
-  private inspectorBridge: DebugSessionInspectorBridge;
+  public readonly inspectorBridge: DebugSessionInspectorBridge;
   public toolsManager: ToolsManager;
 
   public get port() {
@@ -50,7 +50,7 @@ export default class ConnectSession implements ToolsDelegate, Disposable {
       },
     });
     this.inspectorBridge = new DebugSessionInspectorBridge(this.debugSession);
-    this.toolsManager = new ToolsManager(this.inspectorBridge, this);
+    this.toolsManager = new ToolsManager(this.inspectorBridge, this, true);
   }
 
   public async start(websocketAddress: string) {

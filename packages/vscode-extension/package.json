@@ -272,7 +272,7 @@
           "type": "webview",
           "id": "RNIDE.Tool.ReduxDevTools.view",
           "name": "",
-          "when": "RNIDE.Tool.ReduxDevTools.available && RNIDE.panelIsOpen"
+          "when": "RNIDE.Tool.ReduxDevTools.available"
         }
       ],
       "RadonIDEToolReactQueryDevTools": [
@@ -280,7 +280,7 @@
           "type": "webview",
           "id": "RNIDE.Tool.ReactQueryDevTools.view",
           "name": "",
-          "when": "RNIDE.Tool.ReactQueryDevTools.available && RNIDE.panelIsOpen"
+          "when": "RNIDE.Tool.ReactQueryDevTools.available"
         }
       ]
     },

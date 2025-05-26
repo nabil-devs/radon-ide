@@ -270,13 +270,15 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
       },
     });
 
-    const result = await tunnel.injectDebuggerCommand({
+    const result = (await tunnel.injectDebuggerCommand({
       method: "Runtime.evaluate",
       params: {
         expression: runtimeScript,
       },
-    });
-    console.log("RUNTIME EVAL RESULT", result);
+    })) as Cdp.Runtime.EvaluateResult;
+    if (result.exceptionDetails) {
+      Logger.error("Failed to setup Radon Connect runtime", result.exceptionDetails);
+    }
   }
 
   private handleBindingCalled(command: IProtocolCommand) {

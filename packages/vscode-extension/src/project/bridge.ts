@@ -67,7 +67,7 @@ export abstract class BaseInspectorBridge implements RadonInspectorBridge {
     };
   }
 
-  sendPluginMessage(pluginId: string, type: string, data: any): void {
+  sendPluginMessage(pluginId: string, type: string, data?: any): void {
     this.send({
       type: "pluginMessage",
       data: { pluginId, type, data },

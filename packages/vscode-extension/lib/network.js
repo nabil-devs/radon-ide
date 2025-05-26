@@ -1,5 +1,6 @@
 const RNInternals = require("./rn-internals/rn-internals");
 const { PluginMessageBridge } = require("./plugins/PluginMessageBridge");
+const { register } = require("./expo_dev_plugins");
 
 function mimeTypeFromResponseType(responseType) {
   switch (responseType) {
@@ -76,6 +77,7 @@ export function setup() {
   }
   setupCompleted = true;
 
+  register("network");
   const messageBridge = new PluginMessageBridge("network");
 
   let enabled = false;
