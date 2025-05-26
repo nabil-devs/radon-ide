@@ -60,7 +60,8 @@ export class ToolsManager implements Disposable {
 
   public constructor(
     public readonly inspectorBridge: RadonInspectorBridge,
-    private readonly delegate: ToolsDelegate
+    private readonly delegate: ToolsDelegate,
+    private readonly dontCheckToolsEnabledState: boolean = false
   ) {
     this.toolsSettings = Object.assign({}, extensionContext.workspaceState.get(TOOLS_SETTINGS_KEY));
 
@@ -115,7 +116,9 @@ export class ToolsManager implements Disposable {
   public handleStateChange() {
     for (const plugin of this.plugins.values()) {
       if (plugin.available) {
-        const enabled = this.toolsSettings[plugin.id] || false;
+        const enabled = this.dontCheckToolsEnabledState
+          ? true
+          : this.toolsSettings[plugin.id] || false;
         const active = this.activePlugins.has(plugin);
         if (active !== enabled) {
           if (enabled) {
