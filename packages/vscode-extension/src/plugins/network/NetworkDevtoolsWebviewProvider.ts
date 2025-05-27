@@ -6,12 +6,11 @@ import {
   WebviewViewProvider,
   WebviewViewResolveContext,
 } from "vscode";
-import { IDE } from "../../project/ide";
 import { NETWORK_PLUGIN_ID, NetworkPlugin } from "./network-plugin";
 import { reportToolOpened, reportToolVisibilityChanged } from "../../project/tools";
 import { generateWebviewContent } from "../../panels/webviewContentGenerator";
 import { PREVIEW_NETWORK_NAME, PREVIEW_NETWORK_PATH } from "../../webview/utilities/constants";
-import { Connector } from "../../connect/Connector";
+import findActivePlugin from "../findActivePlugin";
 
 export class NetworkDevtoolsWebviewProvider implements WebviewViewProvider {
   constructor(private readonly context: ExtensionContext) {}
@@ -30,11 +29,8 @@ export class NetworkDevtoolsWebviewProvider implements WebviewViewProvider {
       ],
     };
 
-    // const project = IDE.getInstanceIfExists()?.project;
-    // const wsPort = (project?.deviceSession?.getPlugin("network") as NetworkPlugin)?.websocketPort;
-    const connector = Connector.getInstance();
-    const wsPort = (connector.connectSession?.toolsManager.getPlugin("network") as NetworkPlugin)
-      ?.websocketPort;
+    const networkPlugin = findActivePlugin<NetworkPlugin>(NETWORK_PLUGIN_ID);
+    const wsPort = networkPlugin?.websocketPort;
     if (!wsPort) {
       throw new Error("Couldn't retrieve websocket port from network plugin");
     }

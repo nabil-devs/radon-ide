@@ -10,9 +10,9 @@ import {
 import { extensionContext } from "../../utilities/extensionContext";
 import { getUri } from "../../utilities/getUri";
 import { getNonce } from "../../utilities/getNonce";
-import { IDE } from "../../project/ide";
 import { REACT_QUERY_PLUGIN_ID } from "./react-query-devtools-plugin";
 import { reportToolOpened, reportToolVisibilityChanged } from "../../project/tools";
+import findActiveInspectorBridge from "../findActiveInspectorBridge";
 
 const PATH = "dist/react-query-devtools/assets/";
 
@@ -85,7 +85,7 @@ export class ReactQueryDevToolsPluginWebviewProvider implements WebviewViewProvi
       localResourceRoots: [Uri.joinPath(this.context.extensionUri, PATH)],
     };
 
-    const inspectorBridge = IDE.getInstanceIfExists()?.project?.deviceSession?.inspectorBridge;
+    const inspectorBridge = findActiveInspectorBridge();
 
     const listener = inspectorBridge?.onEvent("pluginMessage", ({ pluginId, type, data }) => {
       if (pluginId === REACT_QUERY_PLUGIN_ID) {
