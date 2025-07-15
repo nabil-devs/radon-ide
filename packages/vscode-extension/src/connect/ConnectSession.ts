@@ -2,6 +2,7 @@ import { DebugSession } from "../debugging/DebugSession";
 import { Metro } from "../project/metro";
 import { Disposable } from "vscode";
 import { BaseInspectorBridge } from "../project/bridge";
+import { ToolsManager } from "../project/tools";
 
 export interface ConnectSessionDelegate {
   onSessionTerminated: () => void;
@@ -28,6 +29,7 @@ class DebugSessionInspectorBridge extends BaseInspectorBridge {
 export default class ConnectSession implements Disposable {
   private debugSession: DebugSession;
   public readonly inspectorBridge: DebugSessionInspectorBridge;
+  public readonly toolsManager: ToolsManager;
 
   public get port() {
     return this.metro.port;
@@ -52,6 +54,9 @@ export default class ConnectSession implements Disposable {
       }
     );
     this.inspectorBridge = new DebugSessionInspectorBridge(this.debugSession);
+    this.toolsManager = new ToolsManager(this.inspectorBridge, {
+      onToolsStateChange: () => {},
+    });
   }
 
   public async start(websocketAddress: string) {

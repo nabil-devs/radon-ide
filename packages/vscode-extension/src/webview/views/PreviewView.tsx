@@ -261,7 +261,7 @@ function PreviewView() {
             title="Stop profiling React"
             onClick={stopProfilingReact}
           />
-          <ToolsDropdown disabled={!debuggerToolsButtonsActive}>
+          <ToolsDropdown disabled={false}>
             <IconButton tooltip={{ label: "Tools", type: "primary" }}>
               <span className="codicon codicon-tools" />
             </IconButton>
