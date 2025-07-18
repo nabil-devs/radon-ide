@@ -45,7 +45,11 @@ import {
   launchConfigurationFromOptions,
   LaunchConfigurationsManager,
 } from "./launchConfigurationsManager";
-import { LaunchConfiguration, LaunchConfigurationOptions } from "../common/LaunchConfig";
+import {
+  LaunchConfiguration,
+  LaunchConfigurationKind,
+  LaunchConfigurationOptions,
+} from "../common/LaunchConfig";
 
 const PREVIEW_ZOOM_KEY = "preview_zoom";
 const DEEP_LINKS_HISTORY_KEY = "deep_links_history";
@@ -149,8 +153,11 @@ export class Project implements Disposable, ProjectInterface, DeviceSessionsMana
     }
   }
 
-  async selectLaunchConfiguration(options: LaunchConfigurationOptions): Promise<void> {
-    const launchConfig = launchConfigurationFromOptions(options);
+  async selectLaunchConfiguration(
+    options: LaunchConfigurationOptions,
+    launchConfigurationKind = LaunchConfigurationKind.Custom
+  ): Promise<void> {
+    const launchConfig = launchConfigurationFromOptions(options, launchConfigurationKind);
     if (_.isEqual(launchConfig, this.applicationContext.launchConfig)) {
       // No change in launch configuration, nothing to do
       return;
