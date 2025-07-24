@@ -1,5 +1,10 @@
 import vscode from "vscode";
 import { Logger } from "../../Logger";
+import { screenshotToolExec } from "./toolExecutors";
+import { invokeToolCall } from "../shared/api";
+import { textToToolResponse } from "./utils";
+
+const PLACEHOLDER_ID = "1234";
 
 interface LibraryDescriptionToolArgs {
   library_npm_name: string;
@@ -8,12 +13,19 @@ interface LibraryDescriptionToolArgs {
 export class LibraryDescriptionTool
   implements vscode.LanguageModelTool<LibraryDescriptionToolArgs>
 {
-  invoke(
+  async invoke(
     options: vscode.LanguageModelToolInvocationOptions<LibraryDescriptionToolArgs>,
     token: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.LanguageModelToolResult> {
-    Logger.error("MCP Called LibraryDescriptionTool");
-    return { content: [] };
+  ): Promise<vscode.LanguageModelToolResult> {
+    Logger.error("MCP Called LibraryDescriptionTool", token);
+    try {
+      return await invokeToolCall("get_library_description", options.input, PLACEHOLDER_ID);
+    } catch (error) {
+      // TODO: Add / Use AuthorizationError error class
+      // TODO: Pretty errors for unauthorized users
+      // TODO: Disable tools for users with no license
+      return textToToolResponse(String(error));
+    }
   }
 }
 
@@ -24,12 +36,19 @@ interface QueryDocumentationToolArgs {
 export class QueryDocumentationTool
   implements vscode.LanguageModelTool<QueryDocumentationToolArgs>
 {
-  invoke(
+  async invoke(
     options: vscode.LanguageModelToolInvocationOptions<QueryDocumentationToolArgs>,
     token: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.LanguageModelToolResult> {
-    Logger.error("MCP Called QueryDocumentationTool");
-    return { content: [] };
+  ): Promise<vscode.LanguageModelToolResult> {
+    Logger.error("MCP Called QueryDocumentationTool", token);
+    try {
+      return await invokeToolCall("query_documentation", options.input, PLACEHOLDER_ID);
+    } catch (error) {
+      // TODO: Add / Use AuthorizationError error class
+      // TODO: Pretty errors for unauthorized users
+      // TODO: Disable tools for users with no license
+      return textToToolResponse(String(error));
+    }
   }
 }
 
@@ -37,11 +56,7 @@ export class QueryDocumentationTool
 interface ViewScreenshotToolArgs {}
 
 export class ViewScreenshotTool implements vscode.LanguageModelTool<ViewScreenshotToolArgs> {
-  invoke(
-    options: vscode.LanguageModelToolInvocationOptions<ViewScreenshotToolArgs>,
-    token: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.LanguageModelToolResult> {
-    Logger.error("MCP Called ViewScreenshotTool");
-    return { content: [] };
+  async invoke(): Promise<vscode.LanguageModelToolResult> {
+    return await screenshotToolExec();
   }
 }
