@@ -1,4 +1,4 @@
-import { lm, McpHttpServerDefinition, Uri, EventEmitter, version, Disposable } from "vscode";
+import vscode, { lm, version, Disposable } from "vscode";
 import { Logger } from "../../Logger";
 import { watchLicenseTokenChange } from "../../utilities/license";
 import { getTelemetryReporter } from "../../utilities/telemetry";
@@ -9,6 +9,11 @@ import "../../../vscode.mcpConfigurationProvider.d.ts";
 import { LocalMcpServer } from "./LocalMcpServer";
 import { disposeAll } from "../../utilities/disposables";
 import { ConnectionListener } from "../shared/ConnectionListener";
+import {
+  LibraryDescriptionTool,
+  QueryDocumentationTool,
+  ViewScreenshotTool,
+} from "./toolDefinitions";
 
 async function updateMcpConfig(port: number, mcpVersion: string) {
   const mcpConfig = (await readMcpConfig()) || newMcpConfig();
@@ -16,41 +21,21 @@ async function updateMcpConfig(port: number, mcpVersion: string) {
   await writeMcpConfig(updatedConfig);
 }
 
-function directLoadRadonAI(
-  server: LocalMcpServer,
-  connectionListener: ConnectionListener
-): Disposable {
-  // Version suffix has to be incremented on every MCP server reload.
-  let versionSuffix = 0;
+function directLoadRadonAI(): Disposable {
+  const libraryDescriptionTool = vscode.lm.registerTool(
+    "get_library_description",
+    new LibraryDescriptionTool()
+  );
 
-  const didChangeEmitter = new EventEmitter<void>();
+  const queryDocumentationTool = vscode.lm.registerTool(
+    "query_documentation",
+    new QueryDocumentationTool()
+  );
 
-  const updateMcpEntry = () => {
-    versionSuffix += 1;
-    server.setVersionSuffix(versionSuffix);
-    didChangeEmitter.fire();
-  };
-
-  const connectionChangeListener = connectionListener.onConnectionRestored(updateMcpEntry);
-  const licenseChangeListener = watchLicenseTokenChange(updateMcpEntry);
-
-  const mcpServerEntry = lm.registerMcpServerDefinitionProvider("RadonAIMCPProvider", {
-    onDidChangeMcpServerDefinitions: didChangeEmitter.event,
-    provideMcpServerDefinitions: async () => {
-      const port = await server.getPort();
-      return [
-        new McpHttpServerDefinition(
-          "RadonAI",
-          Uri.parse(`http://127.0.0.1:${port}/mcp`),
-          {},
-          server.getVersion()
-        ),
-      ];
-    },
-  });
+  const viewScreenshotTool = vscode.lm.registerTool("view_screenshot", new ViewScreenshotTool());
 
   return new Disposable(() =>
-    disposeAll([connectionChangeListener, licenseChangeListener, mcpServerEntry])
+    disposeAll([libraryDescriptionTool, queryDocumentationTool, viewScreenshotTool])
   );
 }
 
@@ -79,14 +64,14 @@ function isDirectLoadingAvailable() {
 }
 
 export default function registerRadonAi(): Disposable {
-  const connectionListener = new ConnectionListener();
-  const server = new LocalMcpServer(connectionListener);
-
   if (isDirectLoadingAvailable()) {
-    const disposables = directLoadRadonAI(server, connectionListener);
+    const disposables = directLoadRadonAI();
 
-    return new Disposable(() => disposeAll([disposables, server, connectionListener]));
+    return new Disposable(() => disposeAll([disposables]));
   } else {
+    const connectionListener = new ConnectionListener();
+    const server = new LocalMcpServer(connectionListener);
+
     let versionSuffix = 0;
 
     const fsReloadRadonAi = () => {
