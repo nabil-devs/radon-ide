@@ -1,5 +1,4 @@
 import vscode from "vscode";
-import { Logger } from "../../Logger";
 import { screenshotToolExec } from "./toolExecutors";
 import { invokeToolCall } from "../shared/api";
 import { textToToolResponse } from "./utils";
@@ -18,7 +17,6 @@ export class LibraryDescriptionTool
     options: vscode.LanguageModelToolInvocationOptions<LibraryDescriptionToolArgs>,
     token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
-    Logger.error("MCP Called LibraryDescriptionTool", token);
     const toolName = "get_library_description";
     try {
       return await invokeToolCall(toolName, options.input, PLACEHOLDER_ID);
@@ -46,7 +44,6 @@ export class QueryDocumentationTool
     options: vscode.LanguageModelToolInvocationOptions<QueryDocumentationToolArgs>,
     token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
-    Logger.error("MCP Called QueryDocumentationTool", token);
     const toolName = "query_documentation";
     try {
       return await invokeToolCall(toolName, options.input, PLACEHOLDER_ID);
