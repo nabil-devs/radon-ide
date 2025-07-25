@@ -3,6 +3,7 @@ import { Logger } from "../../Logger";
 import { screenshotToolExec } from "./toolExecutors";
 import { invokeToolCall } from "../shared/api";
 import { textToToolResponse } from "./utils";
+import { AuthorizationError } from "./AuthorizationError";
 
 const PLACEHOLDER_ID = "1234";
 
@@ -18,11 +19,16 @@ export class LibraryDescriptionTool
     token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
     Logger.error("MCP Called LibraryDescriptionTool", token);
+    const toolName = "get_library_description";
     try {
-      return await invokeToolCall("get_library_description", options.input, PLACEHOLDER_ID);
+      return await invokeToolCall(toolName, options.input, PLACEHOLDER_ID);
     } catch (error) {
-      // TODO: Add / Use AuthorizationError error class
-      // TODO: Pretty errors for unauthorized users
+      if (error instanceof AuthorizationError) {
+        // This error is a fallback, as LLM tools should be disabled when no valid license is present.
+        const msg = `You have to have a valid Radon IDE license to use the ${toolName} tool.`;
+        return textToToolResponse(msg);
+      }
+
       // TODO: Disable tools for users with no license
       return textToToolResponse(String(error));
     }
@@ -41,11 +47,16 @@ export class QueryDocumentationTool
     token: vscode.CancellationToken
   ): Promise<vscode.LanguageModelToolResult> {
     Logger.error("MCP Called QueryDocumentationTool", token);
+    const toolName = "query_documentation";
     try {
-      return await invokeToolCall("query_documentation", options.input, PLACEHOLDER_ID);
+      return await invokeToolCall(toolName, options.input, PLACEHOLDER_ID);
     } catch (error) {
-      // TODO: Add / Use AuthorizationError error class
-      // TODO: Pretty errors for unauthorized users
+      if (error instanceof AuthorizationError) {
+        // This error is a fallback, as LLM tools should be disabled when no valid license is present.
+        const msg = `You have to have a valid Radon IDE license to use the ${toolName} tool.`;
+        return textToToolResponse(msg);
+      }
+
       // TODO: Disable tools for users with no license
       return textToToolResponse(String(error));
     }
