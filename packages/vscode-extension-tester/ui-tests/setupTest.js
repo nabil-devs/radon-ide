@@ -1,41 +1,52 @@
-import { VSBrowser, WebView, Workbench } from "vscode-extension-tester";
-import { paths } from "../data/testData.js";
-import { openProjectInVSCode } from "../utils/projectLauncher.js";
-import { EditorView } from "vscode-extension-tester";
+import {
+  VSBrowser,
+  WebView,
+  Workbench,
+  EditorView,
+} from "vscode-extension-tester";
+import path from "path";
+import fs from "fs";
 
-export function sharedTestLifecycle() {
-  let browser, driver, workbench, view;
-  let isSmokeFailed = false;
+let driver, workbench, view, browser;
 
-  beforeEach(async function () {
-    if (isSmokeFailed) {
-      this.skip();
-    }
+before(async function () {
+  console.log("Initializing VSBrowser...");
+  browser = VSBrowser.instance;
+  if (!browser) {
+    console.error("Failed to initialize VSBrowser.");
+    return;
+  }
+  driver = browser.driver;
+  if (!driver) {
+    console.error("Failed to obtain driver from VSBrowser.");
+    return;
+  }
 
-    console.log("Initializing VSBrowser...");
-    browser = VSBrowser.instance;
-    if (!browser) {
-      console.error("Failed to initialize VSBrowser.");
-      return;
-    }
-    driver = browser.driver;
-    if (!driver) {
-      console.error("Failed to obtain driver from VSBrowser.");
-      return;
-    }
+  await browser.waitForWorkbench();
+  workbench = new Workbench();
+  await workbench.executeCommand("Notifications: Clear All Notifications");
+  await workbench.executeCommand("View: Close All Editors");
 
-    await browser.waitForWorkbench();
+  view = new WebView();
+});
 
-    workbench = new Workbench();
+afterEach(async function () {
+  if (this.currentTest.state === "failed") {
+    driver = VSBrowser.instance.driver;
+    const image = await driver.takeScreenshot();
 
-    view = new WebView();
-    await openProjectInVSCode(browser, driver, paths.projectPath, workbench);
-  });
+    const screenshotDir = path.join(process.cwd(), "screenshots");
+    const filePath = path.join(screenshotDir, `${this.currentTest.title}.png`);
 
-  afterEach(async function () {
-    await view.switchBack();
-    await new EditorView().closeAllEditors();
-  });
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    fs.writeFileSync(filePath, image, "base64");
+    console.log(`Saved screenshot: ${filePath}`);
+  }
+  view = new WebView();
+  await view.switchBack();
+  await new EditorView().closeAllEditors();
+});
 
-  return () => ({ browser, driver, workbench, view });
+export function get() {
+  return { driver, workbench, view, browser };
 }

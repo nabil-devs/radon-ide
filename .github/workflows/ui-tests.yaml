@@ -7,6 +7,10 @@ on:
         description: Node.js version to use
         required: false
         default: "20"
+      testApp:
+        description: Project app name to test
+        required: true
+        default: "react-native-77"
 
 jobs:
   build-and-test:
@@ -36,7 +40,7 @@ jobs:
         run: npm i -g @vscode/vsce
 
       - name: get test app
-        run: npm run get-test-app
+        run: npm run get-test-app -- ${{ github.event.inputs.testApp }}
         working-directory: packages/vscode-extension-tester
 
       - name: Build VSIX package
@@ -45,11 +49,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Show Xcode and available simulators
-        run: |
-          xcodebuild -version
-          xcrun simctl list devices
-
       - name: Run setup-run-tests
         run: npm run setup-run-tests
         working-directory: packages/vscode-extension-tester
+        env:
+          PROJECT_NAME: ${{ github.event.inputs.testApp }}
+
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-ui-screenshots
+          path: packages/vscode-extension-tester/screenshots/
