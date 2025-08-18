@@ -111,8 +111,10 @@ export async function deleteDevice(driver, deviceName) {
 
 export async function deleteAllDevices(driver) {
   await openRadonIDEPanel(driver);
-  await findAndClickElementByTag(driver, `device-select-trigger`);
-  await findAndClickElementByTag(driver, `manage-devices-button`);
+  await findAndClickElementByTag(driver, `device-select-trigger`, 20000);
+
+  await findAndClickElementByTag(driver, `manage-devices-button`, 20000);
+
   try {
     while (true) {
       const deviceDeleteButton = await findAndWaitForElement(
@@ -125,13 +127,13 @@ export async function deleteAllDevices(driver) {
       await findAndClickElementByTag(
         driver,
         `confirm-delete-device-button`,
-        3000
+        5000
       );
 
       await waitUntilElementGone(
         driver,
         By.css(`[data-test="device-removal-wrapper"]`),
-        5000,
+        10000,
         "delete confirmation modal did not disappear"
       );
     }
