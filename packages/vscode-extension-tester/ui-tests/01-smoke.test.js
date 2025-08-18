@@ -53,11 +53,13 @@ describe("Smoke tests Radon IDE", () => {
       "Timed out waiting for 'approot-select-value' element"
     );
 
-    const text = await approot.getText();
-    assert.equal(
-      text.toLowerCase(),
-      texts.expectedProjectName.toLowerCase(),
-      "Text of the element should be a name of the project"
+    await driver.wait(
+      async () => {
+        const text = await approot.getText();
+        return text.toLowerCase() === texts.expectedProjectName.toLowerCase();
+      },
+      10000,
+      `Timed out waiting for element text to be "${texts.expectedProjectName}"`
     );
   });
 });
