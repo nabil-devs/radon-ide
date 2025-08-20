@@ -50,10 +50,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Setup FFmpeg
-        uses: FedericoCarboni/setup-ffmpeg@v3
-        id: setup-ffmpeg
-        with:
-          ffmpeg-version: release
+        uses: AnimMouse/setup-ffmpeg@v1
 
       - name: Run setup-run-tests
         run: npm run setup-run-tests
