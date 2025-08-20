@@ -49,8 +49,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Install ffmpeg
-        run: brew install ffmpeg
+      - name: Setup FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        id: setup-ffmpeg
+        with:
+          ffmpeg-version: release
 
       - name: Run setup-run-tests
         run: npm run setup-run-tests
