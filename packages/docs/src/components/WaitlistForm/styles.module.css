@@ -1,0 +1,289 @@
+.waitlistForm {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 32px;
+  border-radius: 16px;
+  background: var(--swm-navy-light-10);
+  border: 1px solid var(--swm-purple-light-40);
+}
+
+.header {
+  text-align: center;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--swm-navy-light-100);
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+}
+
+.subtitle {
+  font-size: 16px;
+  color: var(--swm-navy-light-60);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inputContainer {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.emailInput {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid var(--swm-purple-light-60);
+  border-radius: 8px;
+  font-size: 16px;
+  color: var(--swm-navy-light-100);
+  background: white;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.emailInput:focus {
+  outline: none;
+  border-color: var(--swm-purple-light-100);
+  box-shadow: 0 0 0 3px var(--swm-purple-light-transparent);
+}
+
+.emailInput.error {
+  border-color: #e53e3e;
+}
+
+.emailInput:disabled {
+  background: #f7f7f7;
+  color: var(--swm-navy-light-40);
+  cursor: not-allowed;
+}
+
+.submitButton {
+  padding: 12px 24px;
+  background: linear-gradient(135deg, var(--swm-purple-light-100) 0%, var(--swm-purple-dark-100) 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.submitButton:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(120, 42, 235, 0.3);
+}
+
+.submitButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.loader {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.errorMessage {
+  color: #e53e3e;
+  font-size: 14px;
+  margin: 0;
+  text-align: center;
+}
+
+.successContainer {
+  text-align: center;
+  padding: 20px;
+}
+
+.successIcon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: bold;
+  margin: 0 auto 16px auto;
+  animation: successPulse 0.6s ease-out;
+}
+
+@keyframes successPulse {
+  0% { transform: scale(0.8); opacity: 0; }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.successMessage {
+  color: var(--swm-navy-light-100);
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 20px 0;
+}
+
+.resetButton {
+  background: transparent;
+  border: 2px solid var(--swm-purple-light-60);
+  color: var(--swm-purple-light-100);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.resetButton:hover {
+  background: var(--swm-purple-light-transparent);
+  border-color: var(--swm-purple-light-100);
+}
+
+/* Compact variant */
+.compact {
+  padding: 20px;
+  max-width: 400px;
+  gap: 16px;
+}
+
+.compact .inputContainer {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compact .submitButton {
+  width: 100%;
+}
+
+/* Hero variant */
+.hero {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  max-width: 600px;
+  padding: 40px;
+}
+
+.hero .title {
+  color: white;
+  font-size: 32px;
+}
+
+.hero .subtitle {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 18px;
+}
+
+.hero .emailInput {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.hero .emailInput:focus {
+  background: white;
+  border-color: var(--swm-purple-light-100);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .waitlistForm {
+    padding: 24px 20px;
+    margin: 0 16px;
+  }
+  
+  .inputContainer {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .submitButton {
+    width: 100%;
+  }
+  
+  .title {
+    font-size: 20px;
+  }
+  
+  .subtitle {
+    font-size: 14px;
+  }
+  
+  .hero {
+    padding: 32px 24px;
+  }
+  
+  .hero .title {
+    font-size: 24px;
+  }
+  
+  .hero .subtitle {
+    font-size: 16px;
+  }
+}
+
+/* Dark mode support */
+[data-theme='dark'] .waitlistForm {
+  background: var(--swm-navy-dark-140);
+  border-color: var(--swm-purple-dark-60);
+}
+
+[data-theme='dark'] .title {
+  color: var(--swm-navy-dark-40);
+}
+
+[data-theme='dark'] .subtitle {
+  color: var(--swm-navy-dark-60);
+}
+
+[data-theme='dark'] .emailInput {
+  background: var(--swm-navy-dark-120);
+  border-color: var(--swm-purple-dark-60);
+  color: var(--swm-navy-dark-40);
+}
+
+[data-theme='dark'] .emailInput:focus {
+  border-color: var(--swm-purple-dark-100);
+  box-shadow: 0 0 0 3px var(--swm-purple-dark-transparent);
+}
+
+[data-theme='dark'] .successMessage {
+  color: var(--swm-navy-dark-40);
+}
+
+[data-theme='dark'] .resetButton {
+  border-color: var(--swm-purple-dark-60);
+  color: var(--swm-purple-dark-100);
+}
+
+[data-theme='dark'] .resetButton:hover {
+  background: var(--swm-purple-dark-transparent);
+  border-color: var(--swm-purple-dark-100);
+}
