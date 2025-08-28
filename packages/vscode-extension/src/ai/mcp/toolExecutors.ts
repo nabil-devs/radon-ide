@@ -4,6 +4,10 @@ import { IDE } from "../../project/ide";
 import { textToToolResponse } from "./utils";
 import { ToolResponse } from "./models";
 
+export async function viewNetworkExec(): Promise<ToolResponse> {
+  return textToToolResponse("No network traffic recorded.");
+}
+
 export async function screenshotToolExec(): Promise<ToolResponse> {
   const project = IDE.getInstanceIfExists()?.project;
 
