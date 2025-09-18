@@ -3,7 +3,7 @@ name: build VSIX nightly
 on:
   workflow_dispatch:
   schedule:
-    - cron: "50 12 * * *"
+    - cron: "55 12 * * *"
 
 jobs:
   build-and-test:
