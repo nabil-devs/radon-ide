@@ -91,10 +91,10 @@ function PreviewView() {
   const store$ = useStore();
   const rotation = use$(store$.workspaceConfiguration.deviceRotation);
 
-  const { selectedDeviceSession, projectState, project, deviceSettings, hasActiveLicense } = useProject();
+  const { selectedDeviceSession, projectState, project, deviceSettings, hasActiveLicense } =
+    useProject();
 
   const selectedDeviceSessionState = useSelectedDeviceSessionState();
-
 
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectFrame, setInspectFrame] = useState<Frame | null>(null);
