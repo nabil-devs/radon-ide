@@ -17,15 +17,15 @@ function ReloadButton({ disabled }: { disabled: boolean }) {
       }}
       data-testid="top-bar-reload-button"
       disabled={disabled}
-      options={{
-        "Reload JS": () => project.reloadCurrentSession("reloadJs"),
-        "Restart app process": () => project.reloadCurrentSession("restartProcess"),
-        "Reinstall app": () => project.reloadCurrentSession("reinstall"),
-        "Restart Metro server": () => project.reloadCurrentSession("restartMetro"),
-        "Clear Metro cache": () => project.reloadCurrentSession("clearMetro"),
-        "Reboot Device": () => project.reloadCurrentSession("reboot"),
-        "Clean rebuild": () => project.reloadCurrentSession("rebuild"),
-      }}>
+      options={[
+        ["Reload JS", () => project.reloadCurrentSession("reloadJs")],
+        ["Restart app process", () => project.reloadCurrentSession("restartProcess")],
+        ["Reinstall app", () => project.reloadCurrentSession("reinstall")],
+        ["Restart Metro server", () => project.reloadCurrentSession("restartMetro")],
+        ["Clear Metro cache", () => project.reloadCurrentSession("clearMetro")],
+        ["Reboot Device", () => project.reloadCurrentSession("reboot")],
+        ["Clean rebuild", () => project.reloadCurrentSession("rebuild")],
+      ]}>
       <span className="codicon codicon-refresh" />
     </IconButtonWithOptions>
   );

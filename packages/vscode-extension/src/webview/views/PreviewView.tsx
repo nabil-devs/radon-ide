@@ -15,8 +15,6 @@ import { Frame, InspectDataStackItem, InspectStackData } from "../../common/Proj
 import { AndroidSupportedDevices, iOSSupportedDevices } from "../utilities/deviceConstants";
 import "./View.css";
 import "./PreviewView.css";
-import ReplayIcon from "../components/icons/ReplayIcon";
-import RecordingIcon from "../components/icons/RecordingIcon";
 import ToolsDropdown from "../components/ToolsDropdown";
 import AppRootSelect from "../components/AppRootSelect";
 import RadonConnectView from "./RadonConnectView";
@@ -26,6 +24,7 @@ import { InspectorAvailabilityStatus, ProfilingState, ZoomLevelType } from "../.
 import { useModal } from "../providers/ModalProvider";
 import Button from "../components/shared/Button";
 import { ActivateLicenseView } from "./ActivateLicenseView";
+import { ScreenshotButton } from "../components/ScreenshotButton";
 
 const INSPECTOR_AVAILABILITY_MESSAGES = {
   [InspectorAvailabilityStatus.Available]: "Select an element to inspect it",
@@ -94,7 +93,6 @@ function PreviewView() {
   const selectedDeviceSessionState = useSelectedDeviceSessionState();
   const selectedDeviceSessionStatus = use$(selectedDeviceSessionState.status);
   const selectedProjectDevice = use$(selectedDeviceSessionState.deviceInfo);
-  const deviceSettings = use$(store$.workspaceConfiguration.deviceSettings);
 
   const { projectState, project, hasActiveLicense } = useProject();
 
@@ -121,9 +119,7 @@ function PreviewView() {
   const isStarting = selectedDeviceSessionStatus === "starting";
   const isRunning = selectedDeviceSessionStatus === "running";
 
-  const isRecording = use$(selectedDeviceSessionState.screenCapture.isRecording);
   const modelId = use$(selectedDeviceSessionState.deviceInfo.modelId);
-  const recordingTime = use$(selectedDeviceSessionState.screenCapture.recordingTime) ?? 0;
   const replayData = use$(selectedDeviceSessionState.screenCapture.replayData);
   const selectedDevice = use$(selectedDeviceSessionState.deviceInfo);
 
@@ -169,16 +165,6 @@ function PreviewView() {
     };
   }, []);
 
-  function toggleRecording() {
-    try {
-      project.toggleRecording();
-    } catch (e) {
-      if (isRecording) {
-        project.showDismissableError("Failed to capture recording");
-      }
-    }
-  }
-
   function stopProfilingCPU() {
     project.stopProfilingCPU();
   }
@@ -191,18 +177,6 @@ function PreviewView() {
     project.stopReportingFrameRate();
   }
 
-  async function handleReplay() {
-    try {
-      await project.captureReplay();
-    } catch (e) {
-      project.showDismissableError("Failed to capture replay");
-    }
-  }
-
-  async function captureScreenshot() {
-    project.captureScreenshot();
-  }
-
   function onInspectorItemSelected(item: InspectDataStackItem) {
     project.openFileAt(item.source.fileName, item.source.line0Based, item.source.column0Based);
   }
@@ -211,12 +185,6 @@ function PreviewView() {
     setInspectFrame(null);
     setInspectStackData(null);
   }
-
-  const showReplayButton = deviceSettings.replaysEnabled && !isRecording;
-
-  const recordingTimeFormat = `${Math.floor(recordingTime / 60)}:${(recordingTime % 60)
-    .toString()
-    .padStart(2, "0")}`;
 
   let content = null;
   if (radonConnectEnabled) {
@@ -290,43 +258,7 @@ function PreviewView() {
               <span className="codicon codicon-tools" />
             </IconButton>
           </ToolsDropdown>
-          <IconButton
-            className={isRecording ? "button-recording-on" : ""}
-            tooltip={{
-              label: isRecording ? "Stop screen recording" : "Start screen recording",
-            }}
-            onClick={toggleRecording}
-            disabled={!navBarButtonsActive}
-            dataTest="toggle-recording-button">
-            {isRecording ? (
-              <div className="recording-rec-indicator">
-                <div className="recording-rec-dot" />
-                <span>{recordingTimeFormat}</span>
-              </div>
-            ) : (
-              <RecordingIcon />
-            )}
-          </IconButton>
-          {showReplayButton && (
-            <IconButton
-              tooltip={{
-                label: "Replay the last few seconds of the app",
-              }}
-              dataTest="radon-top-bar-show-replay-button"
-              onClick={handleReplay}
-              disabled={!navBarButtonsActive}>
-              <ReplayIcon />
-            </IconButton>
-          )}
-          <IconButton
-            tooltip={{
-              label: "Capture a screenshot of the app",
-            }}
-            onClick={captureScreenshot}
-            disabled={!navBarButtonsActive}
-            dataTest="capture-screenshot-button">
-            <span slot="start" className="codicon codicon-device-camera" />
-          </IconButton>
+          <ScreenshotButton disabled={!navBarButtonsActive} />
           <IconButton
             counter={logCounter}
             counterMode="compact"

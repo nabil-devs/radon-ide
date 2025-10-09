@@ -10,7 +10,13 @@ import {
   createBuildConfig,
   inferBuildType,
 } from "../builders/BuildManager";
-import { AppPermissionType, TouchPoint, DeviceButtonType, InspectData } from "../common/Project";
+import {
+  AppPermissionType,
+  TouchPoint,
+  DeviceButtonType,
+  InspectData,
+  CaptureScreenshotOptions,
+} from "../common/Project";
 import { throttleAsync } from "../utilities/throttle";
 import { getTelemetryReporter } from "../utilities/telemetry";
 import { CancelError, CancelToken } from "../utilities/cancelToken";
@@ -771,8 +777,8 @@ export class DeviceSession implements Disposable {
     this.screenCapture.captureReplay();
   }
 
-  public async captureScreenshot() {
-    this.screenCapture.captureScreenshot();
+  public async captureScreenshot(options: CaptureScreenshotOptions) {
+    this.screenCapture.captureScreenshot(options);
   }
 
   public async getScreenshot() {

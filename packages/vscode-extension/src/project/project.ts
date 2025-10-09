@@ -6,6 +6,7 @@ import _ from "lodash";
 import { TelemetryEventProperties } from "@vscode/extension-telemetry";
 import {
   AppPermissionType,
+  CaptureScreenshotOptions,
   DeviceButtonType,
   DeviceId,
   DeviceRotationDirection,
@@ -460,14 +461,14 @@ export class Project implements Disposable, ProjectInterface, DeviceSessionsMana
     this.deviceSession.captureReplay();
   }
 
-  public async captureScreenshot() {
+  public async captureScreenshot(options: CaptureScreenshotOptions) {
     getTelemetryReporter().sendTelemetryEvent("replay:capture-screenshot", {
       platform: this.deviceSession?.platform,
     });
     if (!this.deviceSession) {
       throw new Error("No device session available");
     }
-    this.deviceSession.captureScreenshot();
+    this.deviceSession.captureScreenshot(options);
   }
 
   public async saveMultimedia(multimediaData: MultimediaData) {

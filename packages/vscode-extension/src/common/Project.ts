@@ -96,6 +96,10 @@ export interface ProjectEventListener<T> {
 
 export type IDEPanelMoveTarget = "new-window" | "editor-tab" | "side-panel";
 
+export type CaptureScreenshotOptions = {
+  saveToClipboard?: boolean;
+};
+
 export interface ProjectInterface {
   getProjectState(): Promise<ProjectState>;
 
@@ -151,7 +155,7 @@ export interface ProjectInterface {
 
   toggleRecording(): void;
   captureReplay(): void;
-  captureScreenshot(): void;
+  captureScreenshot(options: CaptureScreenshotOptions): void;
   saveMultimedia(multimediaData: MultimediaData): Promise<boolean>;
 
   startReportingFrameRate(): void;
