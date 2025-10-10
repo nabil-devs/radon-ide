@@ -6,15 +6,30 @@ import { TextContent, ToolResponse } from "./models";
 import { Output } from "../../common/OutputChannel";
 import { DevicePlatform } from "../../common/State";
 
+const DEVICE_OFF_MESSAGE =
+  "The development viewport device is likely turned off.\n" +
+  "Please turn on the Radon IDE emulator before proceeding.";
+
+export async function sendTouchToolExec(): Promise<ToolResponse> {
+  const project = IDE.getInstanceIfExists()?.project;
+
+  if (!project?.deviceSession) {
+    return textToToolResponse("Could not perform touch!\n" + DEVICE_OFF_MESSAGE);
+  }
+
+  project.dispatchTouches([{ xRatio: 0.5, yRatio: 0.5 }], "Down");
+  project.dispatchTouches([{ xRatio: 0.5, yRatio: 0.5 }], "Up");
+
+  // Return screenshot to display resonse, could also return state diffs, rerenders, etc?
+  // There are a lot of options for comparing the new screen to the previous one, the AI has to get solid feedback.
+  return textToToolResponse("foo");
+}
+
 export async function screenshotToolExec(): Promise<ToolResponse> {
   const project = IDE.getInstanceIfExists()?.project;
 
-  if (!project || !project.deviceSession) {
-    return textToToolResponse(
-      "Could not capture a screenshot!\n" +
-        "The development viewport device is likely turned off.\n" +
-        "Please turn on the Radon IDE emulator before proceeding."
-    );
+  if (!project?.deviceSession) {
+    return textToToolResponse("Could not capture a screenshot!\n" + DEVICE_OFF_MESSAGE);
   }
 
   const screenshot = await project.getScreenshot();
@@ -29,20 +44,11 @@ export async function screenshotToolExec(): Promise<ToolResponse> {
 export async function readLogsToolExec(): Promise<ToolResponse> {
   const ideInstance = IDE.getInstanceIfExists();
 
-  if (!ideInstance) {
-    return textToToolResponse(
-      "Couldn't retrieve build logs - Radon IDE is not launched. Open Radon IDE first."
-    );
-  }
+  const registry = ideInstance?.outputChannelRegistry;
+  const session = ideInstance?.project.deviceSession;
 
-  const registry = ideInstance.outputChannelRegistry;
-  const session = ideInstance.project.deviceSession;
-
-  if (!session) {
-    return textToToolResponse(
-      "Couldn't retrieve build logs - Radon IDE hasn't run any build. " +
-        "You need to select a project and a device in Radon IDE panel."
-    );
+  if (!registry || !session) {
+    return textToToolResponse("Radon IDE hasn't produced any logs yet. " + DEVICE_OFF_MESSAGE);
   }
 
   const isAndroid = session.platform === DevicePlatform.Android;
