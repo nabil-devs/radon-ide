@@ -1,5 +1,6 @@
 module.exports =  {
   parseErrorStack: require("react-native/Libraries/Core/Devtools/parseErrorStack"),
+  symbolicateStackTrace: require("react-native/Libraries/Core/Devtools/symbolicateStackTrace"),
   get LogBoxData() {
     return require("react-native/Libraries/LogBox/Data/LogBoxData");
   },
