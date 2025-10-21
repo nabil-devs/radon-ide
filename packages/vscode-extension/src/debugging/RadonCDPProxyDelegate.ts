@@ -25,7 +25,7 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
   private debuggerResumedEmitter = new EventEmitter();
   private consoleAPICalledEmitter = new EventEmitter();
   private bindingCalledEmitter = new EventEmitter<Cdp.Runtime.BindingCalledEvent>();
-  private bundleParsedEmitter = new EventEmitter<{ isMainBundle: boolean }>();
+  private bundleParsedEmitter = new EventEmitter<{ isMainBundle: boolean; sourceUrl: string }>();
 
   private justCalledStepOver = false;
   private resumeEventTimeout: NodeJS.Timeout | undefined;
@@ -273,7 +273,7 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
 
   private async handleScriptParsed(command: IProtocolCommand): Promise<IProtocolCommand> {
     const params = command.params as Cdp.Debugger.ScriptParsedEvent;
-    const { sourceMapURL } = params;
+    const { sourceMapURL, url } = params;
     if (!sourceMapURL) {
       return command;
     }
@@ -291,7 +291,7 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
         this.mainScriptId = params.scriptId;
       }
 
-      this.bundleParsedEmitter.fire({ isMainBundle });
+      this.bundleParsedEmitter.fire({ isMainBundle, sourceUrl: url });
     } catch (e) {
       Logger.error("Could not process the source map", e);
     }
