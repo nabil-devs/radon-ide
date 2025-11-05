@@ -1,69 +1,158 @@
-import React, {
-  createContext,
-  PropsWithChildren,
-  useContext,
-  useMemo,
-  useReducer,
-  useState,
-} from "react";
+import { createContext, PropsWithChildren, useContext, useMemo, useReducer, useRef } from "react";
 import useNetworkTracker, {
   NetworkTracker,
   networkTrackerInitialState,
 } from "../hooks/useNetworkTracker";
 import { NetworkFilterProvider } from "./NetworkFilterProvider";
+import { generateId, createIDEResponsePromise } from "../utils/panelMessages";
+import { NetworkLog } from "../types/networkLog";
+import { IDEMethod } from "../types/panelMessageProtocol";
+import { ResponseBodyData } from "../types/network";
+import { ThemeDescriptor, ThemeData } from "../../common/theme";
 
 interface NetworkProviderProps extends NetworkTracker {
-  isRecording: boolean;
+  isTracking: boolean;
   isScrolling: boolean;
-  toggleRecording: () => void;
+  setIsTracking: React.Dispatch<React.SetStateAction<boolean>>;
   clearActivity: () => void;
   toggleScrolling: () => void;
   isTimelineVisible: boolean;
   toggleTimelineVisible: () => void;
+  fetchAndOpenResponseInEditor: (networkLog: NetworkLog, base64encoded: boolean) => Promise<void>;
+  getResponseBody: (networkLog: NetworkLog) => Promise<ResponseBodyData | undefined>;
+  getThemeData: (themeDescriptor: ThemeDescriptor) => Promise<ThemeData>;
+}
+
+function createBodyDataResponseTransformer(
+  requestId: string,
+  responseBodiesRef: React.RefObject<Record<string, ResponseBodyData | undefined>>
+) {
+  return (result: unknown): ResponseBodyData | undefined => {
+    const bodyData = result as ResponseBodyData | undefined;
+
+    if (bodyData === undefined) {
+      return responseBodiesRef.current?.[requestId];
+    }
+
+    if (responseBodiesRef.current) {
+      responseBodiesRef.current[requestId] = bodyData;
+    }
+
+    return bodyData;
+  };
 }
 
 const NetworkContext = createContext<NetworkProviderProps>({
   ...networkTrackerInitialState,
-  isRecording: true,
+  isTracking: true,
   isScrolling: false,
-  toggleRecording: () => {},
+  setIsTracking: () => {},
   clearActivity: () => {},
   toggleScrolling: () => {},
   isTimelineVisible: true,
   toggleTimelineVisible: () => {},
+  getResponseBody: async () => undefined,
+  fetchAndOpenResponseInEditor: async () => {},
+  getThemeData: async () => ({}),
 });
 
 export default function NetworkProvider({ children }: PropsWithChildren) {
   const networkTracker = useNetworkTracker();
+  const { clearLogs, isTracking, setIsTracking, sendWebviewIDEMessage, networkLogs } =
+    networkTracker;
 
   const [isTimelineVisible, toggleTimelineVisible] = useReducer((state) => !state, true);
   const [isScrolling, toggleScrolling] = useReducer((state) => !state, false);
-  const [isRecording, setIsRecording] = useState(true);
+  const responseBodiesRef = useRef<Record<string, ResponseBodyData | undefined>>({});
 
   const clearActivity = () => {
-    networkTracker.clearLogs();
+    clearLogs();
+    responseBodiesRef.current = {};
   };
 
-  const toggleRecording = () => {
-    setIsRecording((prev) => {
-      networkTracker.toggleNetwork(prev);
-      return !prev;
+  const getResponseBody = (networkLog: NetworkLog): Promise<ResponseBodyData | undefined> => {
+    const { requestId, type } = networkLog;
+
+    if (!requestId) {
+      return Promise.resolve(undefined);
+    }
+
+    if (responseBodiesRef.current[requestId]) {
+      return Promise.resolve(responseBodiesRef.current[requestId]);
+    }
+
+    const messageId = generateId();
+    const transformer = createBodyDataResponseTransformer(requestId, responseBodiesRef);
+    const promise = createIDEResponsePromise<ResponseBodyData | undefined>(
+      messageId,
+      IDEMethod.ResponseBodyData,
+      transformer
+    );
+
+    // Send the message to the network-plugin backend
+    sendWebviewIDEMessage({
+      messageId: messageId,
+      method: IDEMethod.GetResponseBodyData,
+      params: {
+        requestId,
+        type,
+      },
+    });
+
+    return promise;
+  };
+  const getThemeData = (themeDescriptor: ThemeDescriptor): Promise<ThemeData> => {
+    const messageId = generateId();
+    const promise = createIDEResponsePromise<ThemeData>(messageId, IDEMethod.Theme);
+
+    // Send the message to the network-plugin backend
+    sendWebviewIDEMessage({
+      method: IDEMethod.GetTheme,
+      messageId: messageId,
+      params: {
+        themeDescriptor,
+      },
+    });
+
+    return promise;
+  };
+
+  const fetchAndOpenResponseInEditor = async (networkLog: NetworkLog, base64Encoded: boolean) => {
+    const requestId = networkLog.requestId;
+    const request = networkLog.request;
+
+    if (!requestId || !request) {
+      return Promise.resolve(undefined);
+    }
+
+    const id = generateId();
+
+    sendWebviewIDEMessage({
+      messageId: id,
+      method: IDEMethod.FetchFullResponseBody,
+      params: {
+        request: request,
+        base64Encoded: base64Encoded,
+      },
     });
   };
 
   const contextValue = useMemo(() => {
     return {
       ...networkTracker,
-      networkLogs: networkTracker.networkLogs,
-      isRecording,
-      toggleRecording,
+      networkLogs: networkLogs,
+      isTracking,
+      setIsTracking,
       isScrolling,
       clearActivity,
       toggleScrolling,
       isTimelineVisible,
       toggleTimelineVisible,
+      getResponseBody,
+      fetchAndOpenResponseInEditor,
+      getThemeData,
     };
-  }, [isRecording, isScrolling, isTimelineVisible, networkTracker.networkLogs]);
+  }, [isTracking, isScrolling, isTimelineVisible, networkTracker.networkLogs]);
 
   return (
     <NetworkContext.Provider value={contextValue}>

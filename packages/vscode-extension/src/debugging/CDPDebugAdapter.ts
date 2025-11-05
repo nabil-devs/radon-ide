@@ -11,6 +11,7 @@ import {
   TerminatedEvent,
   ThreadEvent,
   StackFrame,
+  ErrorDestination,
 } from "@vscode/debugadapter";
 import { DebugProtocol } from "@vscode/debugprotocol";
 import { Logger } from "../Logger";
@@ -22,6 +23,8 @@ import {
 import { CDPSession, CDPSessionDelegate } from "./CDPSession";
 import getArraySlots from "./templates/getArraySlots";
 import { filePathForProfile } from "./cpuProfiler";
+import { BINDING_CALLED, SCRIPT_PARSED } from "./DebugSession";
+import { SourceInfo } from "../common/Project";
 
 export type CDPConfiguration = {
   websocketAddress: string;
@@ -53,6 +56,10 @@ export class CDPDebugAdapter extends DebugSession implements CDPSessionDelegate 
 
   private startCDPSession(cdpConfiguration: CDPConfiguration) {
     this.cdpSession = new CDPSession(this, cdpConfiguration);
+    this.cdpSession.onScriptParsed((payload) => this.sendEvent(new Event(SCRIPT_PARSED, payload)));
+    this.cdpSession.onBindingCalled(({ name, payload }) =>
+      this.sendEvent(new Event(BINDING_CALLED, { name, payload }))
+    );
   }
 
   //#region CDPDelegate
@@ -375,6 +382,30 @@ export class CDPDebugAdapter extends DebugSession implements CDPSessionDelegate 
     return res.result;
   }
 
+  private async addBinding(name: string) {
+    const res = await this.cdpSession?.sendCDPMessage("Runtime.addBinding", {
+      name,
+    });
+    return res;
+  }
+
+  private findOriginalPosition(sourceInfo: SourceInfo): SourceInfo {
+    const cdpSession = this.cdpSession;
+    if (!cdpSession) {
+      throw new Error("Coun't get original source position: CDP session is not initialized");
+    }
+    const res = cdpSession.findOriginalPosition(
+      sourceInfo.fileName,
+      sourceInfo.line0Based + 1,
+      sourceInfo.column0Based
+    );
+    return {
+      fileName: res.sourceURL,
+      line0Based: res.lineNumber1Based - 1,
+      column0Based: res.columnNumber0Based,
+    };
+  }
+
   protected async customRequest(
     command: string,
     response: DebugProtocol.Response,
@@ -382,28 +413,48 @@ export class CDPDebugAdapter extends DebugSession implements CDPSessionDelegate 
     request?: DebugProtocol.Request | undefined
   ) {
     response.body = response.body || {};
-    switch (command) {
-      case "RNIDE_startProfiling":
-        if (this.cdpSession) {
-          await this.cdpSession.startProfiling();
-          this.sendEvent(new Event("RNIDE_profilingCPUStarted"));
-        }
-        break;
-      case "RNIDE_stopProfiling":
-        if (this.cdpSession) {
-          const profile = await this.cdpSession.stopProfiling();
-          const filePath = filePathForProfile();
-          await fs.promises.writeFile(filePath, JSON.stringify(profile));
-          this.sendEvent(new Event("RNIDE_profilingCPUStopped", { filePath }));
-        }
-        break;
-      case "RNIDE_evaluate":
-        response.body.result = await this.evaluateExpression(args);
-        break;
-      default:
-        Logger.debug(`Custom req ${command} ${args}`);
+    try {
+      switch (command) {
+        case "RNIDE_findOriginalPosition":
+          response.body = await this.findOriginalPosition(args);
+          break;
+        case "RNIDE_startProfiling":
+          if (this.cdpSession) {
+            await this.cdpSession.startProfiling();
+            this.sendEvent(new Event("RNIDE_profilingCPUStarted"));
+          }
+          break;
+        case "RNIDE_stopProfiling":
+          if (this.cdpSession) {
+            const profile = await this.cdpSession.stopProfiling();
+            const filePath = filePathForProfile();
+            await fs.promises.writeFile(filePath, JSON.stringify(profile));
+            this.sendEvent(new Event("RNIDE_profilingCPUStopped", { filePath }));
+          }
+          break;
+        case "RNIDE_evaluate":
+          response.body.result = await this.evaluateExpression(args);
+          break;
+        case "RNIDE_addBinding":
+          await this.addBinding(args.name);
+          break;
+        default:
+          Logger.debug(`Custom req ${command} ${args}`);
+      }
+      this.sendResponse(response);
+    } catch (e) {
+      Logger.error("Error executing custom debugger request command:", command, e);
+      this.sendErrorResponse(
+        response,
+        {
+          format: (e as Error).message,
+          id: 1,
+        },
+        undefined,
+        undefined,
+        ErrorDestination.User
+      );
     }
-    this.sendResponse(response);
   }
 
   //#endregion

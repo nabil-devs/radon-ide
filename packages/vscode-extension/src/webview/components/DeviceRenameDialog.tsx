@@ -25,7 +25,7 @@ function DeviceRenameDialog({
     return () => {
       showHeader(true);
     };
-  });
+  }, [showHeader]);
 
   const handleDisplayNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const text = formatDisplayName(event.target.value);
@@ -43,7 +43,7 @@ function DeviceRenameDialog({
         <Input
           value={displayName}
           className="device-name-input"
-          data-test="renaming-device-view-input"
+          data-testid="renaming-device-view-input"
           data-error={!isDisplayNameValid}
           type="string"
           onChange={handleDisplayNameChange}

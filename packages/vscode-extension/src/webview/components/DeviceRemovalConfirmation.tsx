@@ -22,10 +22,10 @@ function DeviceRemovalConfirmation({
     return () => {
       showHeader(true);
     };
-  });
+  }, []);
 
   return (
-    <div className="device-removal-wrapper" data-test="device-removing-confirmation-view">
+    <div className="device-removal-wrapper" data-testid="device-removing-confirmation-view">
       <h2 className="device-removal-title">
         Are you sure you want to remove the <i>{deviceInfo.displayName}</i> device?
       </h2>

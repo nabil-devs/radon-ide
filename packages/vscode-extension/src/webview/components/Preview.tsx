@@ -1,9 +1,13 @@
-import { useState, useRef, useEffect, MouseEvent, WheelEvent } from "react";
+import { useState, useRef, useEffect, MouseEvent, WheelEvent, useMemo } from "react";
 import { use$ } from "@legendapp/state/react";
 import "./Preview.css";
-import { clamp, debounce } from "lodash";
+import { clamp, debounce, throttle } from "lodash";
 import { Platform, useProject } from "../providers/ProjectProvider";
-import { AndroidSupportedDevices, iOSSupportedDevices } from "../utilities/deviceConstants";
+import {
+  AndroidSupportedDevices,
+  DeviceProperties,
+  iOSSupportedDevices,
+} from "../utilities/deviceConstants";
 import PreviewLoader from "./PreviewLoader";
 import { useFatalErrorAlert } from "../hooks/useFatalErrorAlert";
 import { useBundleErrorAlert } from "../hooks/useBundleErrorAlert";
@@ -11,7 +15,6 @@ import Debugger from "./Debugger";
 import { useNativeRebuildAlert } from "../hooks/useNativeRebuildAlert";
 import { Frame, InspectDataStackItem, InspectStackData } from "../../common/Project";
 import ZoomControls from "./ZoomControls";
-import { throttle } from "../../utilities/throttle";
 import InspectOverlay from "./InspectOverlay";
 import ReplayUI from "./ReplayUI";
 import MjpegImg from "../Preview/MjpegImg";
@@ -25,6 +28,7 @@ import InspectorUnavailableBox from "./InspectorUnavailableBox";
 import { useApplicationDisconnectedAlert } from "../hooks/useApplicationDisconnectedAlert";
 import { SendFilesOverlay } from "./SendFilesOverlay";
 import {
+  DevicePlatform,
   InspectorAvailabilityStatus,
   InspectorBridgeStatus,
   MultimediaData,
@@ -79,18 +83,18 @@ function Preview({
   const store$ = useStore();
   const selectedDeviceSessionState = useSelectedDeviceSessionState();
 
-  const rotation = use$(store$.workspaceConfiguration.deviceRotation);
+  const rotation = use$(store$.workspaceConfiguration.deviceSettings.deviceRotation);
+
   const appOrientation = use$(selectedDeviceSessionState.applicationSession.appOrientation);
-
   const bundleError = use$(selectedDeviceSessionState.applicationSession.bundleError);
-
   const elementInspectorAvailability = use$(
     selectedDeviceSessionState.applicationSession.elementInspectorAvailability
   );
-
   const inspectorBridgeStatus = use$(
     selectedDeviceSessionState.applicationSession.inspectorBridgeStatus
   );
+  const deviceInfo = use$(selectedDeviceSessionState.deviceInfo);
+  const selectedDeviceSessionStatus = use$(selectedDeviceSessionState.status);
 
   const currentMousePosition = useRef<MouseEvent<HTMLDivElement>>(null);
   const wrapperDivRef = useRef<HTMLDivElement>(null);
@@ -100,28 +104,41 @@ function Preview({
   const [anchorPoint, setAnchorPoint] = useState<Point>({ x: 0.5, y: 0.5 });
   const previewRef = useRef<HTMLCanvasElement>(null);
   const [showPreviewRequested, setShowPreviewRequested] = useState(false);
+
+  const isUsingStaleBuild = use$(selectedDeviceSessionState.isUsingStaleBuild);
+  useNativeRebuildAlert(isUsingStaleBuild);
+
+  useEffect(() => {
+    setShowPreviewRequested(false);
+  }, [selectedDeviceSessionStatus]);
+
   const [inspectorUnavailableBoxPosition, setInspectorUnavailableBoxPosition] =
     useState<Point | null>(null);
   const { dispatchKeyPress, clearPressedKeys } = useKeyPresses();
 
-  const { selectedDeviceSession, project } = useProject();
+  const { project } = useProject();
 
-  const hasFatalError = selectedDeviceSession?.status === "fatalError";
-  const fatalErrorDescriptor = hasFatalError ? selectedDeviceSession.error : undefined;
+  const hasFatalError = selectedDeviceSessionStatus === "fatalError";
 
-  const isRunning = selectedDeviceSession?.status === "running";
+  const fatalErrorDescriptor = use$(() => {
+    const store = selectedDeviceSessionState.get();
+    return store && store.status === "fatalError" ? store.error : undefined;
+  });
+
+  const isRunning = selectedDeviceSessionStatus === "running";
 
   const isRefreshing = use$(() =>
     isRunning ? selectedDeviceSessionState.applicationSession.isRefreshing.get() : false
   );
   const debugPaused = use$(() =>
-    isRunning ? selectedDeviceSessionState.applicationSession.isDebuggerPaused.get() : false
+    isRunning || showPreviewRequested
+      ? selectedDeviceSessionState.applicationSession.isDebuggerPaused.get()
+      : false
   );
 
-  const previewURL = selectedDeviceSession?.previewURL;
+  const previewURL = use$(selectedDeviceSessionState.previewURL);
 
-  const showDevicePreview =
-    selectedDeviceSession?.previewURL && (showPreviewRequested || isRunning);
+  const showDevicePreview = previewURL && (showPreviewRequested || isRunning);
 
   const isAppDisconnected =
     isRunning && inspectorBridgeStatus === InspectorBridgeStatus.Disconnected;
@@ -131,8 +148,6 @@ function Preview({
 
   const bundleErrorDescriptor = isRunning ? bundleError : null;
   useBundleErrorAlert(bundleErrorDescriptor);
-
-  const openRebuildAlert = useNativeRebuildAlert();
 
   /**
    * Converts mouse event coordinates to normalized touch coordinates ([0-1] range)
@@ -199,11 +214,49 @@ function Preview({
     );
   }
 
-  function sendInspectUnthrottled(
+  const inspectElementAt = useMemo(
+    () =>
+      throttle(
+        (translatedX, translatedY, requestStack, showInspectStackModal, clientX, clientY) => {
+          project
+            .inspectElementAt(translatedX, translatedY, requestStack)
+            .then((inspectData) => {
+              if (requestStack && inspectData?.stack) {
+                if (showInspectStackModal) {
+                  setInspectStackData({
+                    requestLocation: {
+                      x: clientX,
+                      y: clientY,
+                    },
+                    stack: inspectData.stack,
+                  });
+                } else {
+                  // find first item w/o hide flag and open file
+                  const firstItem = inspectData.stack.find((item) => !item.hide);
+                  if (firstItem) {
+                    onInspectorItemSelected(firstItem);
+                  }
+                }
+              }
+              if (inspectData.frame) {
+                setInspectFrame(inspectData.frame);
+              }
+            })
+            .catch(() => {
+              // NOTE: we can safely ignore errors, we'll simply not show the frame in that case
+            });
+        },
+        50,
+        { trailing: true }
+      ),
+    [project, onInspectorItemSelected]
+  );
+
+  function sendInspect(
     event: MouseEvent<HTMLDivElement>,
     type: MouseMove | "Leave" | "RightButtonDown"
   ) {
-    if (selectedDeviceSession?.status !== "running") {
+    if (selectedDeviceSessionStatus !== "running") {
       return;
     }
     if (elementInspectorAvailability !== InspectorAvailabilityStatus.Available) {
@@ -216,6 +269,7 @@ function Preview({
       project.sendTelemetry("inspector:show-component-stack", {});
     }
 
+    console.log("sendInspect", type);
     const clampedCoordinates = getNormalizedTouchCoordinates(event);
     const { x: translatedX, y: translatedY } = previewToAppCoordinates(
       appOrientation,
@@ -225,36 +279,18 @@ function Preview({
 
     const requestStack = type === "Down" || type === "RightButtonDown";
     const showInspectStackModal = type === "RightButtonDown";
-    project
-      .inspectElementAt(translatedX, translatedY, requestStack)
-      .then((inspectData) => {
-        if (requestStack && inspectData?.stack) {
-          if (showInspectStackModal) {
-            setInspectStackData({
-              requestLocation: {
-                x: event.clientX,
-                y: event.clientY,
-              },
-              stack: inspectData.stack,
-            });
-          } else {
-            // find first item w/o hide flag and open file
-            const firstItem = inspectData.stack.find((item) => !item.hide);
-            if (firstItem) {
-              onInspectorItemSelected(firstItem);
-            }
-          }
-        }
-        if (inspectData.frame) {
-          setInspectFrame(inspectData.frame);
-        }
-      })
-      .catch(() => {
-        // NOTE: we can safely ignore errors, we'll simply not show the frame in that case
-      });
+    inspectElementAt(
+      translatedX,
+      translatedY,
+      requestStack,
+      showInspectStackModal,
+      event.clientX,
+      event.clientY
+    );
+    if (type !== "Move") {
+      inspectElementAt.flush();
+    }
   }
-
-  const sendInspect = throttle(sendInspectUnthrottled, 50);
 
   function resetInspector() {
     setInspectFrame(null);
@@ -277,7 +313,7 @@ function Preview({
   function onMouseMove(e: MouseEvent<HTMLDivElement>) {
     e.preventDefault();
     if (isInspecting) {
-      sendInspect(e, "Move", false);
+      sendInspect(e, "Move");
     } else if (isMultiTouching) {
       setTouchPoint(getNormalizedTouchCoordinates(e));
       if (e.shiftKey) {
@@ -307,16 +343,16 @@ function Preview({
     wrapperDivRef.current!.focus();
 
     if (isInspecting) {
-      sendInspect(e, e.button === 2 ? "RightButtonDown" : "Down", true);
+      sendInspect(e, e.button === 2 ? "RightButtonDown" : "Down");
     } else if (!inspectFrame) {
       if (e.button === 2) {
         if (
-          selectedDeviceSession?.status === "running" &&
+          selectedDeviceSessionStatus === "running" &&
           elementInspectorAvailability !== InspectorAvailabilityStatus.Available
         ) {
           handleInspectorUnavailable(e);
         } else {
-          sendInspect(e, "RightButtonDown", true);
+          sendInspect(e, "RightButtonDown");
         }
       } else if (isMultiTouching) {
         setIsPressing(true);
@@ -374,7 +410,7 @@ function Preview({
     if (isInspecting) {
       // we force inspect event here to make sure no extra events are throttled
       // and will be dispatched later on
-      sendInspect(e, "Leave", true);
+      sendInspect(e, "Leave");
     }
   }
 
@@ -510,15 +546,33 @@ function Preview({
     };
   }, [project, shouldPreventInputEvents]);
 
-  useEffect(() => {
-    if (selectedDeviceSession?.isUsingStaleBuild) {
-      openRebuildAlert();
-    }
-  }, [selectedDeviceSession?.isUsingStaleBuild]);
+  const isExternalDevice = deviceInfo?.platform === DevicePlatform.Android && !deviceInfo.emulator;
 
-  const device = iOSSupportedDevices.concat(AndroidSupportedDevices).find((sd) => {
-    return sd.modelId === selectedDeviceSession?.deviceInfo.modelId;
-  });
+  const device: DeviceProperties | undefined = isExternalDevice
+    ? ({
+        modelName: deviceInfo.modelId,
+        modelId: deviceInfo.modelId,
+        platform: deviceInfo.platform,
+        screenWidth: deviceInfo.properties.screenWidth,
+        screenHeight: deviceInfo.properties.screenHeight,
+        bezel: {
+          type: "mask" as const,
+          width: deviceInfo.properties.screenWidth,
+          height: deviceInfo.properties.screenHeight,
+          offsetX: 0,
+          offsetY: 0,
+        },
+        skin: {
+          type: "skin" as const,
+          width: deviceInfo.properties.screenWidth,
+          height: deviceInfo.properties.screenHeight,
+          offsetX: 0,
+          offsetY: 0,
+        },
+      } as const)
+    : iOSSupportedDevices.concat(AndroidSupportedDevices).find((sd) => {
+        return sd.modelId === deviceInfo?.modelId;
+      });
 
   const mirroredTouchPosition = calculateMirroredTouchPosition(touchPoint, anchorPoint);
   const normalTouchIndicatorSize = 33;
@@ -528,7 +582,7 @@ function Preview({
     <>
       <div
         className="phone-display-container"
-        data-test="phone-wrapper"
+        data-testid="phone-display-container"
         tabIndex={0} // allows keyboard events to be captured
         ref={wrapperDivRef}
         {...wrapperTouchHandlers}>
@@ -542,6 +596,7 @@ function Preview({
                   cursor: isInspecting ? "crosshair" : "default",
                 }}
                 className="phone-screen"
+                data-testid="phone-screen"
               />
               <RenderOutlinesOverlay />
               {isRunning && <SendFilesOverlay />}
@@ -614,14 +669,11 @@ function Preview({
             </div>
           </Device>
         )}
-        {!showDevicePreview && selectedDeviceSession?.status === "starting" && (
+        {!showDevicePreview && selectedDeviceSessionStatus === "starting" && (
           <Device device={device!} zoomLevel={zoomLevel} wrapperDivRef={wrapperDivRef}>
             <div className="phone-sized phone-content-loading-background" />
             <div className="phone-sized phone-content-loading ">
-              <PreviewLoader
-                startingSessionState={selectedDeviceSession}
-                onRequestShowPreview={() => setShowPreviewRequested(true)}
-              />
+              <PreviewLoader onRequestShowPreview={() => setShowPreviewRequested(true)} />
             </div>
           </Device>
         )}
@@ -634,7 +686,7 @@ function Preview({
 
       {showDevicePreview && <DelayedFastRefreshIndicator isRefreshing={isRefreshing} />}
 
-      <div className="button-group-left-wrapper">
+      <div className="button-group-left-wrapper" data-testid="button-group-left-wrapper">
         <div className="button-group-left">
           <ZoomControls
             zoomLevel={zoomLevel}

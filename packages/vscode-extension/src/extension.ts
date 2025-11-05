@@ -29,24 +29,34 @@ import {
 import { SidePanelViewProvider } from "./panels/SidepanelViewProvider";
 import { Platform } from "./utilities/platform";
 import { IDE } from "./project/ide";
-import { registerRadonChat, registerRadonAi } from "./ai";
 import { ProxyDebugSessionAdapterDescriptorFactory } from "./debugging/ProxyDebugAdapter";
 import { Connector } from "./connect/Connector";
 import { ReactDevtoolsEditorProvider } from "./react-devtools-profiler/ReactDevtoolsEditorProvider";
 import { launchConfigurationFromOptions } from "./project/launchConfigurationsManager";
 import { isIdeConfig } from "./utilities/launchConfiguration";
-import { DeviceRotation, PanelLocation } from "./common/State";
+import { PanelLocation } from "./common/State";
 import { DeviceRotationDirection, IDEPanelMoveTarget } from "./common/Project";
-import { updatePartialWorkspaceConfig } from "./utilities/updatePartialWorkspaceConfig";
+import { RestrictedFunctionalityError } from "./common/Errors";
+import { registerRadonAI } from "./ai/mcp/RadonMcpController";
 
 const CHAT_ONBOARDING_COMPLETED = "chat_onboarding_completed";
 
-const ROTATIONS: DeviceRotation[] = [
-  DeviceRotation.LandscapeLeft,
-  DeviceRotation.Portrait,
-  DeviceRotation.LandscapeRight,
-  DeviceRotation.PortraitUpsideDown,
-] as const;
+function wrapPaywalledFunction<F extends (...args: any[]) => Promise<void> | void>(
+  fn: F,
+  messageOnRestricted: string
+) {
+  return async (...args: Parameters<F>) => {
+    try {
+      await fn(...args);
+    } catch (e) {
+      if (e instanceof RestrictedFunctionalityError) {
+        window.showInformationMessage(messageOnRestricted);
+        return;
+      }
+      throw e;
+    }
+  };
+}
 
 function handleUncaughtErrors(context: ExtensionContext) {
   process.on("unhandledRejection", (error) => {
@@ -117,14 +127,14 @@ export async function activate(context: ExtensionContext) {
 
     const configuration = workspace.getConfiguration("RadonIDE");
 
-    let panelLocation = configuration.get<PanelLocation>("panelLocation");
+    let panelLocation = configuration.get<PanelLocation>("userInterface.panelLocation");
     if (newLocation) {
       panelLocation = newLocation === "side-panel" ? "side-panel" : "tab";
       updatingConfigProgrammatically = true;
-      if (configuration.inspect("panelLocation")?.workspaceValue) {
-        await configuration.update("panelLocation", panelLocation, false);
+      if (configuration.inspect("userInterface.panelLocation")?.workspaceValue) {
+        await configuration.update("userInterface.panelLocation", panelLocation, false);
       } else {
-        await configuration.update("panelLocation", panelLocation, true);
+        await configuration.update("userInterface.panelLocation", panelLocation, true);
       }
       updatingConfigProgrammatically = false;
     }
@@ -145,7 +155,7 @@ export async function activate(context: ExtensionContext) {
   async function closeIDEPanel(fileName?: string, lineNumber?: number) {
     const panelLocation = workspace
       .getConfiguration("RadonIDE")
-      .get<PanelLocation>("panelLocation");
+      .get<PanelLocation>("userInterface.panelLocation");
 
     if (panelLocation !== "tab") {
       commands.executeCommand("setContext", "RNIDE.sidePanelIsClosed", true);
@@ -164,7 +174,10 @@ export async function activate(context: ExtensionContext) {
       });
   }
 
-  async function showStorybookStory(componentTitle: string, storyName: string) {
+  const showStorybookStory = wrapPaywalledFunction(async function (
+    componentTitle: string,
+    storyName: string
+  ) {
     commands.executeCommand("RNIDE.openPanel");
     const ide = IDE.getInstanceIfExists();
     if (ide) {
@@ -172,7 +185,7 @@ export async function activate(context: ExtensionContext) {
     } else {
       window.showWarningMessage("Wait for the app to load before launching storybook.", "Dismiss");
     }
-  }
+  }, "Storybook integration is a Pro feature. Please upgrade your plan to access it.");
 
   async function showInlinePreview(fileName: string, lineNumber: number) {
     commands.executeCommand("RNIDE.openPanel");
@@ -329,22 +342,13 @@ export async function activate(context: ExtensionContext) {
 
   context.subscriptions.push(
     workspace.onDidChangeConfiguration((event: ConfigurationChangeEvent) => {
-      if (event.affectsConfiguration("RadonIDE.panelLocation")) {
+      if (event.affectsConfiguration("RadonIDE.userInterface.panelLocation")) {
         showIDEPanel();
       }
     })
   );
 
-  const configuration = workspace.getConfiguration("RadonIDE");
-  const enableRadonAI = configuration.get<boolean>("enableRadonAI");
-
-  if (enableRadonAI) {
-    // Initializes MCP part of Radon AI
-    context.subscriptions.push(registerRadonAi());
-  }
-
-  // You can configure the chat in package.json under the `chatParticipants` key
-  registerRadonChat(context, !!enableRadonAI);
+  context.subscriptions.push(registerRadonAI(context));
 
   const shouldExtensionActivate = findAppRootFolder() !== undefined;
 
@@ -398,24 +402,22 @@ async function openDevMenu() {
   IDE.getInstanceIfExists()?.project.openDevMenu();
 }
 
-async function performBiometricAuthorization() {
-  IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(true);
-}
+const performBiometricAuthorization = wrapPaywalledFunction(async function () {
+  await IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(true);
+}, "Biometric authentication is a Pro feature. Please upgrade your plan to access it.");
 
-async function performFailedBiometricAuthorization() {
-  IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(false);
-}
+const performFailedBiometricAuthorization = wrapPaywalledFunction(async function () {
+  await IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(false);
+}, "Biometric authentication is a Pro feature. Please upgrade your plan to access it.");
 
 async function deviceHomeButtonPress() {
   const project = IDE.getInstanceIfExists()?.project;
-  project?.dispatchButton("home", "Down");
-  project?.dispatchButton("home", "Up");
+  project?.dispatchHomeButtonPress();
 }
 
 async function deviceAppSwitchButtonPress() {
   const project = IDE.getInstanceIfExists()?.project;
-  project?.dispatchButton("appSwitch", "Down");
-  project?.dispatchButton("appSwitch", "Up");
+  project?.dispatchAppSwitchButtonPress();
 }
 
 async function deviceVolumeIncrease() {
@@ -442,23 +444,13 @@ async function captureScreenshot() {
   IDE.getInstanceIfExists()?.project.captureScreenshot();
 }
 
-async function rotateDevice(direction: DeviceRotationDirection) {
+const rotateDevice = wrapPaywalledFunction(async function (direction: DeviceRotationDirection) {
   const project = IDE.getInstanceIfExists()?.project;
   if (!project) {
     throw new Error("Radon IDE is not initialized yet.");
   }
-
-  const configuration = workspace.getConfiguration("RadonIDE");
-
-  const currentRotation = configuration.get<DeviceRotation>("deviceRotation");
-  if (currentRotation === undefined) {
-    Logger.warn("[Radon IDE] Device rotation is not set in the configuration.");
-    return;
-  }
-  const currentIndex = ROTATIONS.indexOf(currentRotation);
-  const newIndex = (currentIndex - direction + ROTATIONS.length) % ROTATIONS.length;
-  await updatePartialWorkspaceConfig(configuration, ["deviceRotation", ROTATIONS[newIndex]]);
-}
+  await project.rotateDevices(direction);
+}, "Device rotation is a Pro feature. Please upgrade your plan to access it.");
 
 async function rotateDeviceAnticlockwise() {
   await rotateDevice(DeviceRotationDirection.Anticlockwise);

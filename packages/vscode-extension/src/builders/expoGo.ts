@@ -1,20 +1,17 @@
 import path from "path";
 import http from "http";
-import fs from "fs";
 import { extensionContext } from "../utilities/extensionContext";
 import { exec } from "../utilities/subprocess";
 import { CancelToken } from "../utilities/cancelToken";
 import { DevicePlatform } from "../common/State";
 import { checkNativeDirectoryExists } from "../utilities/checkNativeDirectoryExists";
+import { fileExists } from "../utilities/fileExists";
+import { requireNoCache } from "../utilities/requireNoCache";
 
 type ExpoDeeplinkChoice = "expo-go" | "expo-dev-client";
 
 export const EXPO_GO_BUNDLE_ID = "host.exp.Exponent";
 export const EXPO_GO_PACKAGE_NAME = "host.exp.exponent";
-
-function fileExists(filePath: string, ...additionalPaths: string[]) {
-  return fs.existsSync(path.join(filePath, ...additionalPaths));
-}
 
 export async function isExpoGoProject(appRoot: string, platform: DevicePlatform): Promise<boolean> {
   // There is no straightforward way to tell apart different react native project
@@ -40,6 +37,7 @@ export async function isExpoGoProject(appRoot: string, platform: DevicePlatform)
   const expoGoProjectTesterScript = path.join(
     extensionContext.extensionPath,
     "lib",
+    "expo",
     "expo_go_project_tester.js"
   );
   try {
@@ -51,6 +49,13 @@ export async function isExpoGoProject(appRoot: string, platform: DevicePlatform)
   } catch (e) {
     return false;
   }
+}
+
+export function getExpoVersion(appRoot: string) {
+  const expoPackage = requireNoCache(path.join("expo", "package.json"), {
+    paths: [appRoot],
+  });
+  return expoPackage.version;
 }
 
 export function fetchExpoLaunchDeeplink(
@@ -66,7 +71,16 @@ export function fetchExpoLaunchDeeplink(
       (res) => {
         if (res.statusCode === 307) {
           // we want to retrieve redirect location
-          resolve(res.headers.location);
+          const location = new URL(res.headers.location!);
+          // NOTE: for physical Android devices, the address for the host machine is different
+          // than the one we get in the redirect. However, since we forward the metro port, we can
+          // use `localhost` for the host without issue.
+          if (choice === "expo-go") {
+            location.hostname = "localhost";
+          } else {
+            location.searchParams.set("url", `http://localhost:${metroPort}`);
+          }
+          resolve(location.toString());
         } else {
           resolve();
         }
@@ -95,7 +109,12 @@ export async function downloadExpoGo(
   cancelToken: CancelToken,
   appRoot: string
 ) {
-  const downloadScript = path.join(extensionContext.extensionPath, "lib", "expo_go_download.js");
+  const downloadScript = path.join(
+    extensionContext.extensionPath,
+    "lib",
+    "expo",
+    "expo_go_download.js"
+  );
   const { stdout } = await cancelToken.adapt(
     exec("node", [downloadScript, platform], {
       cwd: appRoot,

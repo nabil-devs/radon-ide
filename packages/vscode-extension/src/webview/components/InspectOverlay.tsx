@@ -4,7 +4,6 @@ import { Frame } from "../../common/Project";
 import { DeviceProperties } from "../utilities/deviceConstants";
 import DimensionsBox from "./DimensionsBox";
 import { appToPreviewCoordinates } from "../utilities/transformAppCoordinates";
-import { useProject } from "../providers/ProjectProvider";
 import { useStore } from "../providers/storeProvider";
 import { useSelectedDeviceSessionState } from "../hooks/selectedSession";
 
@@ -34,11 +33,11 @@ function InspectOverlay({
 }: InspectOverlayProps) {
   const store$ = useStore();
   const selectedDeviceSessionState = useSelectedDeviceSessionState();
-  const rotation = use$(store$.workspaceConfiguration.deviceRotation);
+  const rotation = use$(store$.workspaceConfiguration.deviceSettings.deviceRotation);
   const appOrientation = use$(selectedDeviceSessionState.applicationSession.appOrientation);
+  const deviceSessionStatus = use$(selectedDeviceSessionState.status);
 
-  const { selectedDeviceSession } = useProject();
-  if (selectedDeviceSession?.status !== "running") {
+  if (deviceSessionStatus !== "running") {
     return null;
   }
 
@@ -47,7 +46,7 @@ function InspectOverlay({
   const cssProperties = getCssProperties(translatedInspectFrame);
   return (
     <div className="phone-screen phone-inspect-overlay">
-      <div className="inspect-area" style={cssProperties} />
+      <div className="inspect-area" style={cssProperties} data-testid="phone-inspect-area" />
       {isInspecting && (
         <DimensionsBox
           device={device}
