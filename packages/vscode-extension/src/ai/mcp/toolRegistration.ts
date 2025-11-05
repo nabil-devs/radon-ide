@@ -26,7 +26,7 @@ export async function registerMcpTools(server: McpServer, connectionListener: Co
   );
 
   server.registerTool(
-    "view_network_inspector",
+    "view_network_logs",
     {
       description: "View the contents of the network inspector.",
       inputSchema: {},
