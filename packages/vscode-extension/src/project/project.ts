@@ -65,6 +65,7 @@ import { saveMultimedia } from "../utilities/saveMultimedia";
 import {
   Feature,
   FeatureAvailabilityStatus,
+  FeatureName,
   getFeatureAvailabilityStatus,
   getLicensesForFeature,
   LicenseState,
@@ -88,7 +89,7 @@ type ProjectMethodParameters<K extends keyof Project> = Project[K] extends (
  * @throws {RestrictedFunctionalityError} if the user does not have access to the feature.
  */
 function guardFeatureAccess<K extends keyof Project>(
-  feature: Feature,
+  feature: FeatureName,
   shouldSkipLicenseCheck?: (...args: ProjectMethodParameters<K>) => boolean
 ) {
   return function (target: Project, propertyKey: K, descriptor: PropertyDescriptor) {

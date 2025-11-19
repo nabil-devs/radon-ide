@@ -2,8 +2,8 @@ import { use$ } from "@legendapp/state/react";
 import { useStore } from "../providers/storeProvider";
 import { useCallback } from "react";
 import {
-  Feature,
   FeatureAvailabilityStatus,
+  FeatureName,
   getFeatureAvailabilityStatus,
   LicenseStatus,
 } from "../../common/License";
@@ -12,7 +12,7 @@ import { RestrictedFunctionalityError } from "../../common/Errors";
 
 function withPaywallGuard<F extends (...args: any[]) => Promise<void> | void>(
   fn: F,
-  feature: Feature,
+  feature: FeatureName,
   licenseStatus: LicenseStatus
 ): (...args: Parameters<F>) => Promise<void> {
   const { openPaywall } = usePaywall();
@@ -40,7 +40,7 @@ function withPaywallGuard<F extends (...args: any[]) => Promise<void> | void>(
 
 export function usePaywalledCallback<F extends (...args: any[]) => Promise<void> | void>(
   fn: F,
-  feature: Feature,
+  feature: FeatureName,
   dependencies: unknown[]
 ) {
   const store$ = useStore();
