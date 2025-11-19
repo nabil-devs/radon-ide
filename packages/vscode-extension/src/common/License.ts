@@ -1,4 +1,4 @@
-import featureJson from '../../../../config/features.json';
+import featureJson from "../../../../config/features.json";
 
 // #region License Helpers
 export enum FeatureAvailabilityStatus {
@@ -82,13 +82,16 @@ type FeatureList = {
   enterprise: string[];
 };
 
-const allFeatureNames = Object.values((featureJson as FeatureList)).flat();
+const allFeatureNames = Object.values(featureJson as FeatureList).flat();
 
 export const Feature = Object.freeze(
-  allFeatureNames.reduce((accumulator, feature) => {
-    accumulator[feature] = feature;
-    return accumulator;
-  }, {} as Record<string, string>)
+  allFeatureNames.reduce(
+    (accumulator, feature) => {
+      accumulator[feature] = feature;
+      return accumulator;
+    },
+    {} as Record<string, string>
+  )
 ) as { readonly [K in (typeof allFeatureNames)[number]]: K };
 
 export type FeatureName = (typeof Feature)[keyof typeof Feature];
@@ -98,22 +101,22 @@ export type FeatureName = (typeof Feature)[keyof typeof Feature];
 // #region Feature By License
 
 export const FreeFeatures: Set<FeatureName> = new Set(
-  (featureJson.free as string[]).map(feature => feature as FeatureName)
+  (featureJson.free as string[]).map((feature) => feature as FeatureName)
 );
 
 export const ProFeatures: Set<FeatureName> = new Set([
   ...FreeFeatures,
-  ...(featureJson.pro as string[]).map(feature => feature as FeatureName),
+  ...(featureJson.pro as string[]).map((feature) => feature as FeatureName),
 ]);
 
 export const TeamFeatures: Set<FeatureName> = new Set([
   ...ProFeatures,
-  ...(featureJson.team as string[]).map(feature => feature as FeatureName),
+  ...(featureJson.team as string[]).map((feature) => feature as FeatureName),
 ]);
 
 export const EnterpriseFeatures: Set<FeatureName> = new Set([
   ...TeamFeatures,
-  ...(featureJson.enterprise as string[]).map(feature => feature as FeatureName),
+  ...(featureJson.enterprise as string[]).map((feature) => feature as FeatureName),
 ]);
 
 // #endregion Feature By License
