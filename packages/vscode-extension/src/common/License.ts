@@ -1,3 +1,5 @@
+import featureJson from '../../../../config/features.json';
+
 // #region License Helpers
 export enum FeatureAvailabilityStatus {
   Available,
@@ -6,7 +8,7 @@ export enum FeatureAvailabilityStatus {
 
 export function getFeatureAvailabilityStatus(
   licenseStatus: LicenseStatus,
-  feature: Feature
+  feature: FeatureName
 ): FeatureAvailabilityStatus {
   switch (licenseStatus) {
     case LicenseStatus.Inactive:
@@ -31,7 +33,7 @@ export function getFeatureAvailabilityStatus(
   }
 }
 
-export function getLicensesForFeature(feature: Feature) {
+export function getLicensesForFeature(feature: FeatureName) {
   const hasAccess = (license: LicenseStatus) =>
     getFeatureAvailabilityStatus(license, feature) === FeatureAvailabilityStatus.Available;
   const licenses = [
@@ -73,90 +75,45 @@ export function getLicenseStatusFromString(str: string): LicenseStatus {
 
 // #region Features
 
-export enum Feature {
-  AndroidSmartphoneEmulators = "AndroidSmartphoneEmulators",
-  AndroidTabletEmulators = "AndroidTabletEmulators",
-  AndroidPhysicalDevice = "AndroidPhysicalDevice",
-  AppSwitcherButton = "AppSwitcherButton",
-  Biometrics = "Biometrics",
-  ComponentPreview = "ComponentPreview",
-  Debugger = "Debugger",
-  DeviceAppearanceSettings = "DeviceAppearanceSettings",
-  DeviceFontSizeSettings = "DeviceFontSizeSettings",
-  DeviceLocalizationSettings = "DeviceLocalizationSettings",
-  DeviceRotation = "DeviceRotation",
-  ElementInspector = "ElementInspector",
-  ExpoRouterIntegration = "ExpoRouterIntegration",
-  HomeButton = "HomeButton",
-  IOSSmartphoneSimulators = "IOSSmartphoneSimulators",
-  IOSTabletSimulators = "IOSTabletSimulators",
-  JSLogging = "JSLogging",
-  JSProfiler = "JSProfiler",
-  LocationSimulation = "LocationSimulation",
-  NetworkInspection = "NetworkInspection",
-  OpenDeepLink = "OpenDeepLink",
-  OutlineRenders = "OutlineRenders",
-  Permissions = "Permissions",
-  ReactProfiler = "ReactProfiler",
-  ReactQueryDevTools = "ReactQueryDevTools",
-  RadonConnect = "RadonConnect",
-  RadonAI = "RadonAI",
-  ReduxDevTools = "ReduxDevTools",
-  ScreenRecording = "ScreenRecording",
-  ScreenReplay = "ScreenReplay",
-  Screenshot = "Screenshot",
-  SendFile = "SendFile",
-  StorybookIntegration = "StorybookIntegration",
-  VolumeButtons = "VolumeButtons",
-}
+type FeatureList = {
+  free: string[];
+  pro: string[];
+  team: string[];
+  enterprise: string[];
+};
+
+const allFeatureNames = Object.values((featureJson as FeatureList)).flat();
+
+export const Feature = Object.freeze(
+  allFeatureNames.reduce((accumulator, feature) => {
+    accumulator[feature] = feature;
+    return accumulator;
+  }, {} as Record<string, string>)
+) as { readonly [K in (typeof allFeatureNames)[number]]: K };
+
+export type FeatureName = (typeof Feature)[keyof typeof Feature];
 
 // #endregion Features
 
 // #region Feature By License
 
-export const FreeFeatures: Set<Feature> = new Set<Feature>([
-  Feature.AndroidSmartphoneEmulators,
-  Feature.AppSwitcherButton,
-  Feature.ComponentPreview,
-  Feature.Debugger,
-  Feature.DeviceAppearanceSettings,
-  Feature.DeviceFontSizeSettings,
-  Feature.ElementInspector,
-  Feature.ExpoRouterIntegration,
-  Feature.HomeButton,
-  Feature.IOSSmartphoneSimulators,
-  Feature.JSLogging,
-  Feature.JSProfiler,
-  Feature.NetworkInspection,
-  Feature.OpenDeepLink,
-  Feature.OutlineRenders,
-  Feature.ReactProfiler,
-  Feature.ReactQueryDevTools,
-  Feature.RadonConnect,
-  Feature.ReduxDevTools,
-  Feature.VolumeButtons,
-]);
+export const FreeFeatures: Set<FeatureName> = new Set(
+  (featureJson.free as string[]).map(feature => feature as FeatureName)
+);
 
-export const ProFeatures: Set<Feature> = new Set<Feature>([
-  Feature.AndroidTabletEmulators,
-  Feature.AndroidPhysicalDevice,
-  Feature.Biometrics,
-  Feature.DeviceLocalizationSettings,
-  Feature.DeviceRotation,
-  Feature.IOSTabletSimulators,
-  Feature.LocationSimulation,
-  Feature.Permissions,
-  Feature.RadonAI,
-  Feature.ScreenRecording,
-  Feature.ScreenReplay,
-  Feature.Screenshot,
-  Feature.SendFile,
-  Feature.StorybookIntegration,
+export const ProFeatures: Set<FeatureName> = new Set([
   ...FreeFeatures,
+  ...(featureJson.pro as string[]).map(feature => feature as FeatureName),
 ]);
 
-export const TeamFeatures: Set<Feature> = new Set<Feature>([...ProFeatures]);
+export const TeamFeatures: Set<FeatureName> = new Set([
+  ...ProFeatures,
+  ...(featureJson.team as string[]).map(feature => feature as FeatureName),
+]);
 
-export const EnterpriseFeatures: Set<Feature> = new Set<Feature>([...TeamFeatures]);
+export const EnterpriseFeatures: Set<FeatureName> = new Set([
+  ...TeamFeatures,
+  ...(featureJson.enterprise as string[]).map(feature => feature as FeatureName),
+]);
 
 // #endregion Feature By License
