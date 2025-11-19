@@ -1,0 +1,42 @@
+{
+  "free": [
+    "AndroidSmartphoneEmulators",
+    "AppSwitcherButton",
+    "ComponentPreview",
+    "Debugger",
+    "DeviceAppearanceSettings",
+    "DeviceFontSizeSettings",
+    "ElementInspector",
+    "ExpoRouterIntegration",
+    "HomeButton",
+    "IOSSmartphoneSimulators",
+    "JSLogging",
+    "JSProfiler",
+    "NetworkInspection",
+    "OpenDeepLink",
+    "OutlineRenders",
+    "ReactProfiler",
+    "ReactQueryDevTools",
+    "RadonConnect",
+    "ReduxDevTools",
+    "VolumeButtons"
+  ],
+  "pro": [
+    "AndroidTabletEmulators",
+    "AndroidPhysicalDevice",
+    "Biometrics",
+    "DeviceLocalizationSettings",
+    "DeviceRotation",
+    "IOSTabletSimulators",
+    "LocationSimulation",
+    "Permissions",
+    "RadonAI",
+    "ScreenRecording",
+    "ScreenReplay",
+    "Screenshot",
+    "SendFile",
+    "StorybookIntegration"
+  ],
+  "team": [],
+  "enterprise": []
+}
