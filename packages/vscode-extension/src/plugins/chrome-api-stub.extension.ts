@@ -1,3 +1,24 @@
+type Callback<Args extends unknown[], Return = void> = (...args: Args) => Return;
+
+class ChromeEvent<Args extends unknown[]> {
+  private listeners: Callback<Args>[] = [];
+
+  public addListener(listener: Callback<Args>) {
+    this.listeners.push(listener);
+  }
+
+  public removeListener(listener: Callback<Args>) {
+    const idx = this.listeners.indexOf(listener);
+    if (idx !== -1) {
+      this.listeners.splice(idx, 1);
+    }
+  }
+
+  public emit(...args: Args) {
+    this.listeners.slice().forEach((listener) => listener(...args));
+  }
+}
+
 const eventsStub = {
   addListener() {},
   removeListener() {},
@@ -23,40 +44,14 @@ interface Port {
   sender: Sender;
 }
 
-type ConnectListener = (port: Port) => void;
-const connectListeners: ConnectListener[] = [];
-const onConnect = {
-  addListener(listener: ConnectListener) {
-    connectListeners.push(listener);
-  },
-  removeListener(listener: ConnectListener) {
-    const idx = connectListeners.indexOf(listener);
-    if (idx === -1) {
-      return;
-    }
-    connectListeners.splice(idx, 1);
-  },
-};
+const connectEvent = new ChromeEvent<[Port]>();
 export function addConnection(port: Port) {
-  connectListeners.slice().forEach((listener) => listener(port));
+  connectEvent.emit(port);
 }
 
-type MessageListener = (request: unknown, sender: Sender) => void;
-const messageListeners: MessageListener[] = [];
-const onMessage = {
-  addListener(listener: MessageListener) {
-    messageListeners.push(listener);
-  },
-  removeListener(listener: MessageListener) {
-    const idx = messageListeners.indexOf(listener);
-    if (idx === -1) {
-      return;
-    }
-    messageListeners.splice(idx, 1);
-  },
-};
+const messageEvent = new ChromeEvent<[unknown, Sender]>();
 export function postMessage(request: unknown, sender: Sender) {
-  messageListeners.slice().forEach((listener) => listener(request, sender));
+  messageEvent.emit(request, sender);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -83,8 +78,8 @@ const chrome = {
   runtime: {
     onInstalled: eventsStub,
     openOptionsPage() {},
-    onConnect,
-    onMessage,
+    onConnect: connectEvent,
+    onMessage: messageEvent,
     onConnectExternal: eventsStub,
     onMessageExternal: eventsStub,
     id: "chrome-stub-runtime",
