@@ -461,13 +461,17 @@ export function AppWrapper({ children, initialProps, fabric }) {
   useEffect(() => {
     if (hasLayout) {
       const appKey = getCurrentScene();
-      inspectorBridge.sendMessage({
-        type: "appReady",
-        data: {
-          appKey,
-          navigationPlugins: navigationPlugins.map((plugin) => plugin.name),
-        },
-      });
+      const isLogBox = appKey === "LogBox";
+
+      // eslint-disable-next-line
+      !isLogBox &&
+        inspectorBridge.sendMessage({
+          type: "appReady",
+          data: {
+            appKey,
+            navigationPlugins: navigationPlugins.map((plugin) => plugin.name),
+          },
+        });
 
       const nextNavigationDescriptor = initialProps?.__radon_nextNavigationDescriptor;
       nextNavigationDescriptor && requestNavigationChange(nextNavigationDescriptor);
