@@ -1,5 +1,5 @@
-import { ElementHelperService } from "./helperServices.js";
 import { Key } from "vscode-extension-tester";
+import { ElementHelperService } from "./helperServices.js";
 import RadonViewsService from "./radonViewsService.js";
 
 export default class RadonSettingsService {
@@ -57,5 +57,8 @@ export default class RadonSettingsService {
         `device-settings-set-orientation-${rotation}`
       );
     await this.driver.executeScript("arguments[0].click();", rotationButton);
+
+    // rotation animation
+    await this.driver.sleep(500);
   }
 }

@@ -136,7 +136,7 @@ export function exec(
   name: string,
   args?: string[],
   options?: execa.Options & { allowNonZeroExit?: boolean; quietErrorsOnExit?: boolean }
-) {
+): ExecaChildProcess<string> {
   const subprocess = execa(
     name,
     args,

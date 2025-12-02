@@ -1,26 +1,5 @@
-import * as vscode from "vscode";
-import { EditorType, ImageContent, TextContent, ToolResponse } from "./models";
-
-export const MCP_LOG = "[MCP]";
-
-export enum ConfigLocation {
-  Project = "Project",
-  Global = "Global",
-}
-
-export function getConfigLocation(): ConfigLocation {
-  const configuration = vscode.workspace.getConfiguration("RadonIDE");
-  return configuration.get<ConfigLocation>("radonAI.MCPConfigLocation") ?? ConfigLocation.Project;
-}
-
-export function getEditorType(): EditorType {
-  // Cursor features different settings than VSCode
-  const config = vscode.workspace.getConfiguration();
-  if (config.get("cursor") !== undefined) {
-    return EditorType.CURSOR;
-  }
-  return EditorType.VSCODE;
-}
+import { Store } from "react-devtools-inline";
+import { DevtoolsElement, ImageContent, TextContent, ToolResponse } from "./models";
 
 export function pngToToolContent(base64Encoded: string): ImageContent {
   return {
@@ -41,4 +20,9 @@ export function textToToolResponse(text: string): ToolResponse {
   return {
     content: [textToToolContent(text)],
   };
+}
+
+// This util removes the need for type-casting on every `store.getElementByID` call
+export function getDevtoolsElementByID(id: number, store: Store): DevtoolsElement | null {
+  return store.getElementByID(id) as unknown as DevtoolsElement | null;
 }

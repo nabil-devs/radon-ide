@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import _ from "lodash";
+import { useEffect, useRef, useState } from "react";
 import { vscode } from "../../webview/utilities/vscode";
 import { NetworkLog } from "../types/networkLog";
 import {
@@ -8,29 +9,126 @@ import {
   NetworkEvent,
   NETWORK_EVENTS,
   WebviewCommand,
+  NetworkType,
+  IDEMethod,
+  SessionData,
+  IDEType,
 } from "../types/panelMessageProtocol";
+import { generateId, createIDEResponsePromise } from "../utils/panelMessages";
 
 export interface NetworkTracker {
   networkLogs: NetworkLog[];
+  isTracking: boolean;
   clearLogs: () => void;
-  toggleNetwork: (isRunning: boolean) => void;
   getSource: (networkLog: NetworkLog) => void;
   sendWebviewCDPMessage: (messageData: CDPMessage) => void;
   sendWebviewIDEMessage: (messageData: IDEMessage) => void;
+  setIsTracking: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 export const networkTrackerInitialState: NetworkTracker = {
   networkLogs: [],
+  isTracking: true,
   clearLogs: () => {},
-  toggleNetwork: () => {},
   getSource: () => {},
   sendWebviewCDPMessage: () => {},
   sendWebviewIDEMessage: () => {},
+  setIsTracking: () => {},
 };
+
+interface NetworkEventTimestampMap {
+  [NetworkEvent.RequestWillBeSent]?: number;
+  [NetworkEvent.ResponseReceived]?: number;
+  [NetworkEvent.LoadingFinished]?: number;
+  [NetworkEvent.LoadingFailed]?: number;
+}
+
+interface RequestDurationData {
+  totalTime?: number;
+  ttfb?: number;
+  downloadTime?: number;
+}
+
+/**
+ * Necessitated by the new network inspector architecture, which does not provide
+ * durationMs and ttfb fields directly in the events. Instead, the class calculates the time
+ * differences based on the timestamps of the relevant events:
+ * - totalTime = loadingFinished.timestamp - requestWillBeSent.timestamp;
+ * - ttfb = responseReceived.timestamp - requestWillBeSent.timestamp;
+ * - downloadTime = loadingFinished.timestamp - responseReceived.timestamp;
+ */
+class RequestTimingTracker {
+  private requestTimestampMap: Map<string | number, NetworkEventTimestampMap> = new Map();
+
+  private calculateTimeDifference(
+    timeStart: number | undefined,
+    timeEnd: number | undefined
+  ): number | undefined {
+    if (timeStart === undefined || timeEnd === undefined) {
+      return undefined;
+    }
+    return _.round((timeEnd - timeStart) * 1000, 2);
+  }
+
+  public setRequestTimestamp(message: CDPMessage) {
+    const { method, params } = message;
+    const { requestId, timestamp } = params || {};
+    if (!requestId || !timestamp) {
+      return;
+    }
+
+    const existingTimestamps = this.requestTimestampMap.get(requestId) || {};
+    this.requestTimestampMap.set(requestId, {
+      ...existingTimestamps,
+      [method]: timestamp,
+    });
+  }
+
+  public getRequestDurationData(message: CDPMessage): RequestDurationData {
+    const { requestId } = message.params || {};
+    if (!requestId) {
+      return {};
+    }
+    const timestamps = this.requestTimestampMap.get(requestId);
+    if (!timestamps) {
+      return {};
+    }
+
+    const requestWillBeSentTimestamp = timestamps[NetworkEvent.RequestWillBeSent];
+    const responseReceivedTimestamp = timestamps[NetworkEvent.ResponseReceived];
+    const loadingFinishedTimestamp =
+      timestamps[NetworkEvent.LoadingFinished] ?? timestamps[NetworkEvent.LoadingFailed];
+
+    const timingData: RequestDurationData = {};
+
+    timingData.ttfb = this.calculateTimeDifference(
+      requestWillBeSentTimestamp,
+      responseReceivedTimestamp
+    );
+
+    timingData.totalTime = this.calculateTimeDifference(
+      requestWillBeSentTimestamp,
+      loadingFinishedTimestamp
+    );
+
+    timingData.downloadTime = this.calculateTimeDifference(
+      responseReceivedTimestamp,
+      loadingFinishedTimestamp
+    );
+
+    return timingData;
+  }
+}
 
 const useNetworkTracker = (): NetworkTracker => {
   const [networkLogs, setNetworkLogs] = useState<NetworkLog[]>([]);
   const [cdpMessages, setCdpMessages] = useState<CDPMessage[]>([]);
+  const [isTracking, setIsTracking] = useState(true);
+
+  const isSynchronisedRef = useRef(false);
+
+  const requestTimingTrackerRef = useRef(new RequestTimingTracker());
+  const requestTimingTracker = requestTimingTrackerRef.current;
 
   const validateCDPMessage = (message: WebviewMessage): CDPMessage | null => {
     try {
@@ -41,7 +139,7 @@ const useNetworkTracker = (): NetworkTracker => {
         return null;
       }
 
-      const haveRequiredFields = payload.params?.timestamp && payload.params?.requestId;
+      const haveRequiredFields = !!payload.params?.requestId;
       const isNetworkEvent = NETWORK_EVENTS.includes(payload.method as NetworkEvent);
 
       if (!isNetworkEvent || !haveRequiredFields) {
@@ -59,9 +157,12 @@ const useNetworkTracker = (): NetworkTracker => {
     const { method, params } = cdpMessage;
 
     // Already checked in validateCDPMessage, but TS needs more convincing
-    if (!params?.requestId || !params?.timestamp) {
+    if (!params?.requestId) {
       return;
     }
+
+    requestTimingTracker.setRequestTimestamp(cdpMessage);
+    const requestDurationData = requestTimingTracker.getRequestDurationData(cdpMessage);
 
     const networkEventMethod = method as NetworkEvent;
     const existingIndex = newLogs.findIndex((log) => log.requestId === params.requestId);
@@ -79,8 +180,10 @@ const useNetworkTracker = (): NetworkTracker => {
           ...existingLog.timeline,
           timestamp: params.timestamp,
           wallTime: params.wallTime,
-          durationMs: params.duration || existingLog.timeline.durationMs,
-          ttfb: params.ttfb || existingLog.timeline.ttfb,
+          durationMs:
+            params.duration ?? requestDurationData.totalTime ?? existingLog.timeline.durationMs,
+          ttfb: params.ttfb ?? requestDurationData.ttfb ?? existingLog.timeline.ttfb,
+          downloadTime: requestDurationData.downloadTime ?? existingLog.timeline.downloadTime,
         },
         type: params.type || existingLog.type,
         encodedDataLength: params.encodedDataLength || existingLog.encodedDataLength,
@@ -104,21 +207,60 @@ const useNetworkTracker = (): NetworkTracker => {
     }
   };
 
+  const getSessionData = (): Promise<SessionData> => {
+    const messageId = generateId();
+    const promise = createIDEResponsePromise<SessionData>(messageId, IDEType.SessionData);
+
+    sendWebviewIDEMessage({
+      method: IDEMethod.GetSessionData,
+      messageId: messageId,
+    });
+
+    return promise;
+  };
+
+  const updateCDPMessages = (message: WebviewMessage) => {
+    const cdpMessage = validateCDPMessage(message);
+    if (cdpMessage) {
+      setCdpMessages((prev) => [...prev, cdpMessage]);
+    }
+  };
+
+  const synchronizeSessionData = async () => {
+    const sessionData = await getSessionData();
+    const { networkMessages, shouldTrackNetwork } = sessionData || {};
+
+    networkMessages.forEach(updateCDPMessages);
+
+    setIsTracking(shouldTrackNetwork);
+    isSynchronisedRef.current = true;
+  };
+
+  const handleWindowMessage = (message: MessageEvent) => {
+    const webviewMessage: WebviewMessage = message.data;
+
+    if (webviewMessage.payload.method === IDEMethod.ClearStoredMessages) {
+      setNetworkLogs([]);
+      setCdpMessages([]);
+      return;
+    }
+
+    updateCDPMessages(webviewMessage);
+  };
+
   useEffect(() => {
-    const listener = (message: MessageEvent) => {
-      const cdpMessage = validateCDPMessage(message.data);
-      if (cdpMessage) {
-        setCdpMessages((prev) => [...prev, cdpMessage]);
-      }
-    };
+    if (!isSynchronisedRef.current) {
+      return;
+    }
+    sendNetworkTrackingUpdate(isTracking);
+  }, [isTracking]);
 
-    window.addEventListener("message", listener);
-
-    window.addEventListener("message", listener);
+  useEffect(() => {
+    synchronizeSessionData();
+    window.addEventListener("message", handleWindowMessage);
 
     return () => {
-      window.removeEventListener("message", listener);
-      window.removeEventListener("message", listener);
+      window.removeEventListener("message", handleWindowMessage);
     };
   }, []);
 
@@ -136,6 +278,11 @@ const useNetworkTracker = (): NetworkTracker => {
   const clearLogs = () => {
     setNetworkLogs([]);
     setCdpMessages([]);
+
+    sendWebviewIDEMessage({
+      messageId: "clearStoredMessages",
+      method: IDEMethod.ClearStoredMessages,
+    });
   };
 
   const sendWebviewCDPMessage = (messageData: CDPMessage) => {
@@ -152,17 +299,17 @@ const useNetworkTracker = (): NetworkTracker => {
     });
   };
 
-  const toggleNetwork = (isRunning: boolean) => {
-    sendWebviewCDPMessage({
-      id: "enable",
-      method: isRunning ? "Network.disable" : "Network.enable",
+  const sendNetworkTrackingUpdate = (shouldTrack: boolean) => {
+    sendWebviewIDEMessage({
+      messageId: "toggleTracking",
+      method: shouldTrack ? IDEMethod.StartNetworkTracking : IDEMethod.StopNetworkTracking,
     });
   };
 
   const getSource = (networkLog: NetworkLog) => {
     sendWebviewCDPMessage({
-      id: "initiator",
-      method: "Network.Initiator",
+      messageId: "initiator",
+      method: NetworkType.Initiator,
       params: {
         requestId: networkLog.requestId,
         initiator: networkLog.initiator,
@@ -172,11 +319,12 @@ const useNetworkTracker = (): NetworkTracker => {
 
   return {
     networkLogs: networkLogs.filter((log) => log?.request?.url !== undefined),
+    isTracking,
     clearLogs,
-    toggleNetwork,
     getSource,
     sendWebviewCDPMessage,
     sendWebviewIDEMessage,
+    setIsTracking,
   };
 };
 

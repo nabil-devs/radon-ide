@@ -11,6 +11,7 @@ import {
   MultimediaData,
   ToolsState,
 } from "./State";
+import { Sentiment } from "./types";
 
 export type DeviceId = DeviceInfo["id"];
 
@@ -51,14 +52,16 @@ export type Frame = {
   height: number;
 };
 
+export type SourceInfo = {
+  fileName: string;
+  line0Based: number;
+  column0Based: number;
+};
+
 export type InspectDataStackItem = {
   componentName: string;
   hide: boolean;
-  source: {
-    fileName: string;
-    line0Based: number;
-    column0Based: number;
-  };
+  source: SourceInfo;
   frame: Frame;
 };
 
@@ -118,6 +121,7 @@ export interface ProjectInterface {
   runDependencyChecks(): Promise<void>;
 
   rotateDevices(direction: DeviceRotationDirection): Promise<void>;
+  toggleDeviceAppearance(): Promise<void>;
 
   updateToolEnabledState(toolName: keyof ToolsState, enabled: boolean): Promise<void>;
   openTool(toolName: keyof ToolsState): Promise<void>;
@@ -139,7 +143,6 @@ export interface ProjectInterface {
   openDevMenu(): Promise<void>;
 
   activateLicense(activationKey: string): Promise<ActivateDeviceResult>;
-  hasActiveLicense(): Promise<boolean>;
 
   resetAppPermissions(permissionType: AppPermissionType): Promise<void>;
 
@@ -161,6 +164,10 @@ export interface ProjectInterface {
   stopProfilingCPU(): void;
   startProfilingReact(): void;
   stopProfilingReact(): void;
+
+  openSelectMaestroFileDialog(): Promise<string[] | undefined>;
+  startMaestroTest(fileNames: string[]): Promise<void>;
+  stopMaestroTest(): Promise<void>;
 
   dispatchTouches(touches: Array<TouchPoint>, type: "Up" | "Move" | "Down"): void;
   dispatchKeyPress(keyCode: number, direction: "Up" | "Down"): void;
@@ -189,12 +196,15 @@ export interface ProjectInterface {
     displayName: string,
     runtime: IOSRuntimeInfo
   ): Promise<DeviceInfo>;
+  loadInstalledImages(): void;
   renameDevice(device: DeviceInfo, newDisplayName: string): Promise<void>;
   removeDevice(device: DeviceInfo): Promise<void>;
 
   log(type: "info" | "error" | "warn" | "log", message: string, ...args: any[]): Promise<void>;
   focusOutput(channel: Output): Promise<void>;
 
+  buildDiagnosticsReport(logFilesToInclude: string[]): Promise<void>;
+  getLogFileNames(): Promise<string[]>;
   getCommandsCurrentKeyBinding(commandName: string): Promise<string | undefined>;
   movePanelTo(location: IDEPanelMoveTarget): Promise<void>;
   openExternalUrl(uriString: string): Promise<void>;
@@ -204,6 +214,13 @@ export interface ProjectInterface {
   openLaunchConfigurationFile(): Promise<void>;
 
   reportIssue(): Promise<void>;
+  sendFeedback(
+    sentiment: Sentiment,
+    options: {
+      message?: string;
+      includeLogs?: boolean;
+    }
+  ): Promise<void>;
   sendTelemetry(eventName: string, properties?: TelemetryEventProperties): Promise<void>;
 
   addListener<K extends keyof ProjectEventMap>(

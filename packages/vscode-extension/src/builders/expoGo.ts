@@ -6,6 +6,7 @@ import { CancelToken } from "../utilities/cancelToken";
 import { DevicePlatform } from "../common/State";
 import { checkNativeDirectoryExists } from "../utilities/checkNativeDirectoryExists";
 import { fileExists } from "../utilities/fileExists";
+import { requireNoCache } from "../utilities/requireNoCache";
 
 type ExpoDeeplinkChoice = "expo-go" | "expo-dev-client";
 
@@ -50,6 +51,13 @@ export async function isExpoGoProject(appRoot: string, platform: DevicePlatform)
   }
 }
 
+export function getExpoVersion(appRoot: string) {
+  const expoPackage = requireNoCache(path.join("expo", "package.json"), {
+    paths: [appRoot],
+  });
+  return expoPackage.version;
+}
+
 export function fetchExpoLaunchDeeplink(
   metroPort: number,
   platformString: string,
@@ -63,7 +71,16 @@ export function fetchExpoLaunchDeeplink(
       (res) => {
         if (res.statusCode === 307) {
           // we want to retrieve redirect location
-          resolve(res.headers.location);
+          const location = new URL(res.headers.location!);
+          // NOTE: for physical Android devices, the address for the host machine is different
+          // than the one we get in the redirect. However, since we forward the metro port, we can
+          // use `localhost` for the host without issue.
+          if (choice === "expo-go") {
+            location.hostname = "localhost";
+          } else {
+            location.searchParams.set("url", `http://localhost:${metroPort}`);
+          }
+          resolve(location.toString());
         } else {
           resolve();
         }

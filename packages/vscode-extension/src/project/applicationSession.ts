@@ -10,12 +10,13 @@ import {
   workspace,
 } from "vscode";
 import { minimatch } from "minimatch";
+import { InspectedElementPayload, InspectElementFullData } from "react-devtools-inline";
 import { DebugSession, DebugSessionImpl, DebugSource } from "../debugging/DebugSession";
 import { ApplicationContext } from "./ApplicationContext";
 import { ReconnectingDebugSession } from "../debugging/ReconnectingDebugSession";
 import { DeviceBase } from "../devices/DeviceBase";
 import { Logger } from "../Logger";
-import { AppOrientation, InspectData } from "../common/Project";
+import { AppOrientation, InspectData, SourceInfo } from "../common/Project";
 import { disposeAll } from "../utilities/disposables";
 import { ToolKey, ToolPlugin, ToolsManager } from "./tools";
 import { focusSource } from "../utilities/focusSource";
@@ -26,6 +27,7 @@ import {
   DevicePlatform,
   DeviceRotation,
   DeviceType,
+  initialApplicationSessionState,
   InspectorAvailabilityStatus,
   InspectorBridgeStatus,
   NavigationHistoryItem,
@@ -42,9 +44,12 @@ import {
   DevtoolsServer,
   CDPDevtoolsServer,
 } from "./devtools";
-import { RadonInspectorBridge } from "./bridge";
+import { RadonInspectorBridge } from "./inspectorBridge";
+import { NETWORK_EVENT_MAP, NetworkBridge } from "./networkBridge";
 import { MetroSession } from "./metro";
 import { getDebuggerTargetForDevice } from "./DebuggerTarget";
+import { isCDPDomainCall } from "../network/types/panelMessageProtocol";
+import { MaestroTestRunner } from "./MaestroTestRunner";
 
 const MAX_URL_HISTORY_SIZE = 20;
 
@@ -64,26 +69,56 @@ function waitForAppReady(inspectorBridge: RadonInspectorBridge, cancelToken?: Ca
     reject(new CancelError("Cancelled while waiting for the app to be ready."));
   });
   const appReadyListener = inspectorBridge.onEvent("appReady", resolve);
-  promise.finally(() => {
-    appReadyListener.dispose();
-  });
+  promise
+    .finally(() => {
+      appReadyListener.dispose();
+    })
+    .catch(() => {
+      // we ignore cancellation rejections as this is another surfaces for it to bubble up
+    });
   return promise;
+}
+
+type SourceData = {
+  sourceURL: string;
+  line: number;
+  column: number;
+};
+
+function isFullInspectionData(
+  payload?: InspectedElementPayload
+): payload is InspectElementFullData {
+  return payload?.type === "full-data";
+}
+
+export function toSourceInfo(source: SourceData): SourceInfo {
+  return {
+    fileName: source.sourceURL,
+    column0Based: source.column,
+    line0Based: source.line,
+  };
 }
 
 export class ApplicationSession implements Disposable {
   private disposables: Disposable[] = [];
   private debugSession?: DebugSession & Disposable;
   private debugSessionEventSubscription?: Disposable;
+  private networkBridge: NetworkBridge;
   private isActive = false;
   private inspectCallID = 7621;
   private devtools: DevtoolsConnection | undefined;
   private toolsManager: ToolsManager;
+  private maestroTestRunner: MaestroTestRunner;
   private lastRegisteredInspectorAvailability: InspectorAvailabilityStatus =
     InspectorAvailabilityStatus.UnavailableInactive;
 
   private readonly _inspectorBridge: DevtoolsInspectorBridge;
   public get inspectorBridge(): RadonInspectorBridge {
     return this._inspectorBridge;
+  }
+
+  public get devtoolsStore() {
+    return this.devtools?.store;
   }
 
   public static async launch(
@@ -136,7 +171,13 @@ export class ApplicationSession implements Disposable {
     try {
       onLaunchStage(StartupMessage.Launching);
       await cancelToken.adapt(
-        device.launchApp(buildResult, metro.port, devtoolsPort, launchArguments)
+        device.launchApp(
+          buildResult,
+          metro.port,
+          devtoolsPort,
+          launchArguments,
+          applicationContext.appRootFolder
+        )
       );
 
       const appReadyPromise = waitForAppReady(session.inspectorBridge, cancelToken);
@@ -147,9 +188,8 @@ export class ApplicationSession implements Disposable {
         await cancelToken.adapt(Promise.race([activatePromise, bundleErrorPromise]));
       }
 
-      const hasBundleError = stateManager.getState().bundleError !== null;
-      if (!hasBundleError && getIsActive()) {
-        await cancelToken.adapt(appReadyPromise);
+      if (getIsActive()) {
+        await cancelToken.adapt(Promise.race([appReadyPromise, bundleErrorPromise]));
       }
 
       return session;
@@ -175,7 +215,9 @@ export class ApplicationSession implements Disposable {
     private readonly packageNameOrBundleId: string,
     private readonly supportedOrientations: DeviceRotation[]
   ) {
+    this.stateManager.updateState(initialApplicationSessionState);
     this.registerMetroListeners();
+    this.networkBridge = new NetworkBridge();
 
     const devtoolsInspectorBridge = new DevtoolsInspectorBridge();
     this._inspectorBridge = devtoolsInspectorBridge;
@@ -195,10 +237,16 @@ export class ApplicationSession implements Disposable {
     this.toolsManager = new ToolsManager(
       this.stateManager.getDerived("toolsState"),
       devtoolsInspectorBridge,
-      this.applicationContext.workspaceConfigState
+      this.networkBridge,
+      this.applicationContext.workspaceConfigState,
+      this.metro.port
     );
+
     this.disposables.push(this.toolsManager);
     this.disposables.push(this.stateManager);
+
+    this.maestroTestRunner = new MaestroTestRunner(this.device);
+    this.disposables.push(this.maestroTestRunner);
   }
 
   private setupDevtoolsServer(devtoolsServer: DevtoolsServer) {
@@ -238,6 +286,7 @@ export class ApplicationSession implements Disposable {
   private async setupDebugSession(): Promise<void> {
     this.debugSession = await this.createDebugSession();
     this.debugSessionEventSubscription = this.registerDebugSessionListeners(this.debugSession);
+    this.networkBridge.setDebugSession(this.debugSession);
     if (this.cdpDevtoolsServer) {
       this.cdpDevtoolsServer.dispose();
       this.cdpDevtoolsServer = undefined;
@@ -311,6 +360,17 @@ export class ApplicationSession implements Disposable {
     }
   };
 
+  private onNetworkEvent = (event: DebugSessionCustomEvent): void => {
+    const method = event.body?.method;
+    if (!method || !isCDPDomainCall(method)) {
+      Logger.error("Unknown network event method:", method);
+      this.networkBridge.emitEvent("unknownEvent", event.body);
+      return;
+    }
+
+    this.networkBridge.emitEvent(NETWORK_EVENT_MAP[method], event.body);
+  };
+
   private registerDebugSessionListeners(debugSession: DebugSession): Disposable {
     const subscriptions: Disposable[] = [
       debugSession.onConsoleLog(this.onConsoleLog),
@@ -318,6 +378,7 @@ export class ApplicationSession implements Disposable {
       debugSession.onDebuggerResumed(this.onDebuggerResumed),
       debugSession.onProfilingCPUStarted(this.onProfilingCPUStarted),
       debugSession.onProfilingCPUStopped(this.onProfilingCPUStopped),
+      debugSession.onNetworkEvent(this.onNetworkEvent),
     ];
     return new Disposable(() => {
       disposeAll(subscriptions);
@@ -429,6 +490,7 @@ export class ApplicationSession implements Disposable {
     const debugSession = this.debugSession;
     this.debugSession = undefined;
     await debugSession?.dispose();
+    this.networkBridge.clearDebugSession();
     this.cdpDevtoolsServer?.dispose();
     this.cdpDevtoolsServer = undefined;
   }
@@ -646,6 +708,39 @@ export class ApplicationSession implements Disposable {
   }
   //#endregion
 
+  // #region Maestro testing
+
+  public async startMaestroTest(fileNames: string[]) {
+    if (this.stateManager.getState().maestroTestState !== "stopped") {
+      const selection = await window.showWarningMessage(
+        "A Maestro test is already running on this device. Abort it before starting a new one.",
+        "Abort and continue",
+        "Cancel"
+      );
+      if (selection !== "Abort and continue") {
+        return;
+      }
+      await this.stopMaestroTest();
+    }
+    try {
+      this.stateManager.updateState({ maestroTestState: "running" });
+      await this.maestroTestRunner.startMaestroTest(fileNames);
+    } finally {
+      this.stateManager.updateState({ maestroTestState: "stopped" });
+    }
+  }
+
+  public async stopMaestroTest() {
+    this.stateManager.updateState({ maestroTestState: "aborting" });
+    try {
+      await this.maestroTestRunner.stopMaestroTest();
+    } finally {
+      this.stateManager.updateState({ maestroTestState: "stopped" });
+    }
+  }
+
+  // #endregion
+
   //#region Element Inspector
   public async inspectElementAt(
     xRatio: number,
@@ -669,6 +764,20 @@ export class ApplicationSession implements Disposable {
     let stack = undefined;
     if (requestStack && inspectData?.stack) {
       stack = inspectData.stack;
+      // for stack entries with source names that start with http, we need to decipher original source positions
+      // using source maps via the debugger
+      await Promise.all(
+        stack.map(async (item) => {
+          if (item.source?.fileName.startsWith("http") && this.debugSession) {
+            try {
+              item.source = await this.debugSession.findOriginalPosition(item.source);
+            } catch (e) {
+              Logger.error("Error finding original source position for stack item", item, e);
+            }
+          }
+        })
+      );
+
       const inspectorExcludePattern =
         this.applicationContext.workspaceConfiguration.general.inspectorExcludePattern;
       const patterns = inspectorExcludePattern?.split(",").map((pattern) => pattern.trim());
@@ -685,6 +794,35 @@ export class ApplicationSession implements Disposable {
       });
     }
     return { frame: inspectData.frame, stack };
+  }
+
+  public async inspectElementById(id: number) {
+    const payload = await this.devtools?.inspectElementById(id);
+
+    if (!isFullInspectionData(payload)) {
+      return undefined;
+    }
+
+    // `source` is incorrectly typed as `Source`, it's actually `SourceData` when `payload.type === 'full-data'`
+    const source = payload.value.source as SourceData | null;
+
+    if (source) {
+      const sourceInfo = toSourceInfo(source);
+
+      if (sourceInfo.fileName.startsWith("http") && this.debugSession) {
+        try {
+          const symbolicated = await this.debugSession.findOriginalPosition(sourceInfo);
+          payload.value.source = {
+            fileName: symbolicated.fileName,
+            lineNumber: symbolicated.line0Based,
+          };
+        } catch (e) {
+          Logger.error("Error finding original source position for element", payload, e);
+        }
+      }
+    }
+
+    return payload;
   }
   //#endregion
 

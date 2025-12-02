@@ -29,7 +29,6 @@ import {
 import { SidePanelViewProvider } from "./panels/SidepanelViewProvider";
 import { Platform } from "./utilities/platform";
 import { IDE } from "./project/ide";
-import { registerRadonChat, registerRadonAi } from "./ai";
 import { ProxyDebugSessionAdapterDescriptorFactory } from "./debugging/ProxyDebugAdapter";
 import { Connector } from "./connect/Connector";
 import { ReactDevtoolsEditorProvider } from "./react-devtools-profiler/ReactDevtoolsEditorProvider";
@@ -37,8 +36,28 @@ import { launchConfigurationFromOptions } from "./project/launchConfigurationsMa
 import { isIdeConfig } from "./utilities/launchConfiguration";
 import { PanelLocation } from "./common/State";
 import { DeviceRotationDirection, IDEPanelMoveTarget } from "./common/Project";
+import { RestrictedFunctionalityError } from "./common/Errors";
+import { registerRadonAI } from "./ai/mcp/RadonMcpController";
+import { MaestroCodeLensProvider } from "./providers/MaestroCodeLensProvider";
 
 const CHAT_ONBOARDING_COMPLETED = "chat_onboarding_completed";
+
+function wrapPaywalledFunction<F extends (...args: any[]) => Promise<void> | void>(
+  fn: F,
+  messageOnRestricted: string
+) {
+  return async (...args: Parameters<F>) => {
+    try {
+      await fn(...args);
+    } catch (e) {
+      if (e instanceof RestrictedFunctionalityError) {
+        window.showInformationMessage(messageOnRestricted);
+        return;
+      }
+      throw e;
+    }
+  };
+}
 
 function handleUncaughtErrors(context: ExtensionContext) {
   process.on("unhandledRejection", (error) => {
@@ -156,7 +175,10 @@ export async function activate(context: ExtensionContext) {
       });
   }
 
-  async function showStorybookStory(componentTitle: string, storyName: string) {
+  const showStorybookStory = wrapPaywalledFunction(async function (
+    componentTitle: string,
+    storyName: string
+  ) {
     commands.executeCommand("RNIDE.openPanel");
     const ide = IDE.getInstanceIfExists();
     if (ide) {
@@ -164,7 +186,7 @@ export async function activate(context: ExtensionContext) {
     } else {
       window.showWarningMessage("Wait for the app to load before launching storybook.", "Dismiss");
     }
-  }
+  }, "Storybook integration is a Pro feature. Please upgrade your plan to access it.");
 
   async function showInlinePreview(fileName: string, lineNumber: number) {
     commands.executeCommand("RNIDE.openPanel");
@@ -173,6 +195,25 @@ export async function activate(context: ExtensionContext) {
       ide.project.openComponentPreview(fileName, lineNumber);
     } else {
       window.showWarningMessage("Wait for the app to load before launching preview.", "Dismiss");
+    }
+  }
+
+  async function startMaestroTest(fileNames: string[]) {
+    const ide = IDE.getInstanceIfExists();
+    if (ide) {
+      ide.project.startMaestroTest(fileNames);
+    } else {
+      window.showWarningMessage(
+        "Wait for the app to load before running Maestro tests.",
+        "Dismiss"
+      );
+    }
+  }
+
+  async function stopMaestroTest() {
+    const ide = IDE.getInstanceIfExists();
+    if (ide) {
+      ide.project.stopMaestroTest();
     }
   }
 
@@ -221,6 +262,8 @@ export async function activate(context: ExtensionContext) {
   context.subscriptions.push(
     commands.registerCommand("RNIDE.showInlinePreview", showInlinePreview)
   );
+  context.subscriptions.push(commands.registerCommand("RNIDE.startMaestroTest", startMaestroTest));
+  context.subscriptions.push(commands.registerCommand("RNIDE.stopMaestroTest", stopMaestroTest));
 
   context.subscriptions.push(commands.registerCommand("RNIDE.captureReplay", captureReplay));
   context.subscriptions.push(commands.registerCommand("RNIDE.toggleRecording", toggleRecording));
@@ -245,6 +288,9 @@ export async function activate(context: ExtensionContext) {
   );
   context.subscriptions.push(
     commands.registerCommand("RNIDE.rotateDeviceClockwise", rotateDeviceClockwise)
+  );
+  context.subscriptions.push(
+    commands.registerCommand("RNIDE.toggleDeviceAppearance", toggleDeviceAppearance)
   );
   // Debug adapter used by custom launch configuration, we register it in case someone tries to run the IDE configuration
   // The current workflow is that people shouldn't run it, but since it is listed under launch options it might happen
@@ -320,6 +366,13 @@ export async function activate(context: ExtensionContext) {
   );
 
   context.subscriptions.push(
+    languages.registerCodeLensProvider(
+      [{ scheme: "file", language: "yaml" }],
+      new MaestroCodeLensProvider()
+    )
+  );
+
+  context.subscriptions.push(
     workspace.onDidChangeConfiguration((event: ConfigurationChangeEvent) => {
       if (event.affectsConfiguration("RadonIDE.userInterface.panelLocation")) {
         showIDEPanel();
@@ -327,16 +380,7 @@ export async function activate(context: ExtensionContext) {
     })
   );
 
-  const configuration = workspace.getConfiguration("RadonIDE");
-  const enableRadonAI = configuration.get<boolean>("radonAI.enableRadonAI");
-
-  if (enableRadonAI) {
-    // Initializes MCP part of Radon AI
-    context.subscriptions.push(registerRadonAi());
-  }
-
-  // You can configure the chat in package.json under the `chatParticipants` key
-  registerRadonChat(context, !!enableRadonAI);
+  context.subscriptions.push(registerRadonAI(context));
 
   const shouldExtensionActivate = findAppRootFolder() !== undefined;
 
@@ -390,13 +434,13 @@ async function openDevMenu() {
   IDE.getInstanceIfExists()?.project.openDevMenu();
 }
 
-async function performBiometricAuthorization() {
-  IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(true);
-}
+const performBiometricAuthorization = wrapPaywalledFunction(async function () {
+  await IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(true);
+}, "Biometric authentication is a Pro feature. Please upgrade your plan to access it.");
 
-async function performFailedBiometricAuthorization() {
-  IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(false);
-}
+const performFailedBiometricAuthorization = wrapPaywalledFunction(async function () {
+  await IDE.getInstanceIfExists()?.project.sendBiometricAuthorization(false);
+}, "Biometric authentication is a Pro feature. Please upgrade your plan to access it.");
 
 async function deviceHomeButtonPress() {
   const project = IDE.getInstanceIfExists()?.project;
@@ -432,14 +476,13 @@ async function captureScreenshot() {
   IDE.getInstanceIfExists()?.project.captureScreenshot();
 }
 
-async function rotateDevice(direction: DeviceRotationDirection) {
+const rotateDevice = wrapPaywalledFunction(async function (direction: DeviceRotationDirection) {
   const project = IDE.getInstanceIfExists()?.project;
   if (!project) {
     throw new Error("Radon IDE is not initialized yet.");
   }
-
-  project.rotateDevices(direction);
-}
+  await project.rotateDevices(direction);
+}, "Device rotation is a Pro feature. Please upgrade your plan to access it.");
 
 async function rotateDeviceAnticlockwise() {
   await rotateDevice(DeviceRotationDirection.Anticlockwise);
@@ -447,6 +490,11 @@ async function rotateDeviceAnticlockwise() {
 
 async function rotateDeviceClockwise() {
   await rotateDevice(DeviceRotationDirection.Clockwise);
+}
+
+async function toggleDeviceAppearance() {
+  const project = IDE.getInstanceIfExists()?.project;
+  await project?.toggleDeviceAppearance();
 }
 
 async function openChat() {

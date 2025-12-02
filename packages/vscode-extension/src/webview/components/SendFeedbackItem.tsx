@@ -4,8 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useModal } from "../providers/ModalProvider";
 import FeedbackView from "../views/FeedbackView";
 import { Feedback } from "./Feedback";
-
-export type Sentiment = "positive" | "negative";
+import { Sentiment } from "../../common/types";
 
 export function SendFeedbackItem() {
   const { openModal } = useModal();
@@ -17,10 +16,9 @@ export function SendFeedbackItem() {
       className="dropdown-menu-item"
       data-testid="radon-bottom-bar-send-feedback-button"
       onSelect={() => {
-        openModal(
-          "Do you enjoy using Radon IDE today?",
-          <FeedbackView initialSentiment={sentiment} />
-        );
+        openModal(<FeedbackView initialSentiment={sentiment} />, {
+          title: "Do you enjoy using Radon IDE today?",
+        });
       }}>
       <span className="codicon codicon-feedback" />
       <div className="dropdown-menu-item-content">

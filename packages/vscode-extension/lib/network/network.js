@@ -5,6 +5,7 @@ const {
   deserializeRequestData,
   mimeTypeFromResponseType,
   readResponseText,
+  getContentTypeHeader,
 } = require("./networkRequestParsers");
 
 let setupCompleted = false;
@@ -16,30 +17,34 @@ export function setup() {
   setupCompleted = true;
 
   const messageBridge = new PluginMessageBridge("network");
+  const responseBuffer = new AsyncBoundedResponseBuffer();
+
+  // Clear any stored messages on the extension end on setup
+  messageBridge.sendMessage("ide-message", JSON.stringify({ method: "IDE.clearStoredMessages", params: {} }));
 
   let enabled = false;
   messageBridge.addMessageListener("cdp-message", (message) => {
     try {
       if (message.method === "Network.enable" && !enabled) {
         enabled = true;
-        enableNetworkInspect(messageBridge);
+        enableNetworkInspect(messageBridge, responseBuffer);
       } else if (message.method === "Network.disable" && enabled) {
         enabled = false;
-        disableNetworkInspect();
+        disableNetworkInspect(responseBuffer);
       }
     } catch (error) {}
   });
 }
 
-function disableNetworkInspect() {
+function disableNetworkInspect(responseBuffer) {
   RNInternals.XHRInterceptor.disableInterception();
+  responseBuffer.clear();
 }
 
-function enableNetworkInspect(networkProxy) {
+function enableNetworkInspect(networkProxy, responseBuffer) {
   const XHRInterceptor = RNInternals.XHRInterceptor;
 
   const loaderId = "xhr-interceptor";
-  const responseBuffer = new AsyncBoundedResponseBuffer();
 
   const requestIdPrefix = Math.random().toString(36).slice(2);
   let requestIdCounter = 0;
@@ -51,30 +56,54 @@ function enableNetworkInspect(networkProxy) {
   async function sendResponseBody(responsePromise, message) {
     const responseBodyData = responsePromise ? await responsePromise : undefined;
     const responseObject = {
-      id: message.id,
+      method: "IDE.ResponseBodyData",
+      messageId: message.messageId,
+      params: { requestId: message.params.requestId },
       result: responseBodyData,
     };
-    networkProxy.sendMessage("cdp-message", JSON.stringify(responseObject));
+    networkProxy.sendMessage("ide-message", JSON.stringify(responseObject));
   }
 
-  function listener(message) {
+  function cdpListener(message) {
     try {
-      if (message.method === "Network.disable") {
-        networkProxy.removeMessageListener("cdp-message", listener);
-      } else if (
-        message.method === "Network.getResponseBody" &&
-        message.params.requestId.startsWith(requestIdPrefix)
-      ) {
-        const requestId = message.params.requestId;
-        const responsePromise = responseBuffer.get(requestId);
+      switch (message.method) {
+        case "Network.disable":
+          networkProxy.removeMessageListener("cdp-message", cdpListener);
+          networkProxy.removeMessageListener("ide-message", ideListener);
+          break;
+        case "Network.getResponseBody":
+          if (!message.params?.requestId?.startsWith(requestIdPrefix)) {
+            return;
+          }
 
-        // Upon initial launch, the message gets send twice in dev, because of
-        // react Strict Mode and dependency on useEffect. To be fixed in next PR's.
-        sendResponseBody(responsePromise, message);
+          const requestId = message.params.requestId;
+          const responsePromise = responseBuffer.get(requestId);
+
+          // Upon initial launch, the message gets send twice in dev, because of
+          // react Strict Mode and dependency on useEffect. To be fixed in next PR's.
+          sendResponseBody(responsePromise, message);
+          break;
+        default:
+          break;
       }
     } catch (error) {}
   }
-  networkProxy.addMessageListener("cdp-message", listener);
+
+  function ideListener(message) {
+    try {
+      switch (message.method) {
+        case "IDE.stopNetworkTracking":
+          responseBuffer.disableBuffering();
+          break;
+        case "IDE.startNetworkTracking":
+          responseBuffer.enableBuffering();
+          break;
+      }
+    } catch (error) {}
+  }
+
+  networkProxy.addMessageListener("cdp-message", cdpListener);
+  networkProxy.addMessageListener("ide-message", ideListener);
 
   const HEADERS_RECEIVED = 2; // readyState value when headers are received
 
@@ -93,7 +122,7 @@ function enableNetworkInspect(networkProxy) {
           url: xhr._url,
           method: xhr._method,
           headers: xhr._headers,
-          postData: deserializeRequestData(data, xhr._headers["content-type"]),
+          postData: deserializeRequestData(data, getContentTypeHeader(xhr)),
         },
         type: "XHR",
         initiator: {
@@ -111,6 +140,7 @@ function enableNetworkInspect(networkProxy) {
             canceled: true,
           });
         } catch (error) {}
+        xhr._aborted = true;
       });
 
       xhr.addEventListener("error", (event) => {
@@ -123,6 +153,7 @@ function enableNetworkInspect(networkProxy) {
             cancelled: false,
           });
         } catch (error) {}
+        xhr._error = true;
       });
 
       xhr.addEventListener("readystatechange", (event) => {
@@ -134,6 +165,10 @@ function enableNetworkInspect(networkProxy) {
       });
 
       xhr.addEventListener("load", (event) => {
+        if (xhr._error || xhr._aborted) {
+          return;
+        }
+
         try {
           const mimeType = mimeTypeFromResponseType(xhr.responseType);
           sendCDPMessage("Network.responseReceived", {
@@ -156,6 +191,9 @@ function enableNetworkInspect(networkProxy) {
       });
 
       xhr.addEventListener("loadend", (event) => {
+        if (xhr._error || xhr._aborted) {
+          return;
+        }
         // We only store the xhr response body object, so we only put on
         // the buffer when loading ends, to get the actual loaded response
         const responsePromise = readResponseText(xhr);
@@ -166,7 +204,7 @@ function enableNetworkInspect(networkProxy) {
             requestId: requestId,
             timestamp: Date.now() / 1000,
             duration: Date.now() - sendTime,
-            encodedDataLength: xhr._response.size || xhr._response.length, // when response is blob, we use size, and length otherwise
+            encodedDataLength: xhr._response?.size || xhr._response?.length, // when response is blob, we use size, and length otherwise
           });
         } catch (error) {}
       });

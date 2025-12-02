@@ -17,12 +17,6 @@ interface GetStateCommand extends EventBase {
 interface UpdateStateCommand extends EventBase {
   command: "RNIDE_update_state";
 }
-interface FocusPreviewCommand extends EventBase {
-  command: "focusPreview";
-}
-interface BlurPreviewCommand extends EventBase {
-  command: "blurPreview";
-}
 
 interface CallArgs {
   callId: string;
@@ -41,15 +35,8 @@ interface UpdateStateArgs {
 type CallEvent = CallCommand & CallArgs;
 type GetStateEvent = GetStateCommand & GetStateArgs;
 type UpdateStateEvent = UpdateStateCommand & UpdateStateArgs;
-type FocusPreviewEvent = FocusPreviewCommand;
-type BlurPreviewEvent = BlurPreviewCommand;
 
-export type WebviewEvent =
-  | CallEvent
-  | GetStateEvent
-  | UpdateStateEvent
-  | FocusPreviewEvent
-  | BlurPreviewEvent;
+export type WebviewEvent = CallEvent | GetStateEvent | UpdateStateEvent;
 
 export class WebviewController implements Disposable {
   private disposables: Disposable[] = [];
@@ -122,10 +109,6 @@ export class WebviewController implements Disposable {
           this.handleGetState(message);
         } else if (message.command === "RNIDE_update_state") {
           this.handleUpdateState(message);
-        } else if (message.command === "focusPreview") {
-          commands.executeCommand("setContext", "RNIDE.isPreviewFocused", true);
-        } else if (message.command === "blurPreview") {
-          commands.executeCommand("setContext", "RNIDE.isPreviewFocused", false);
         }
       },
       undefined,
@@ -166,29 +149,30 @@ export class WebviewController implements Disposable {
         }
         return arg;
       });
-      // @ts-ignore
-      const result = callableObject[method](...argsWithCallbacks);
-      if (result instanceof Promise) {
-        result
-          .then((res) => {
+      try {
+        // @ts-ignore
+        const result = callableObject[method](...argsWithCallbacks);
+        if (result instanceof Promise) {
+          result.then((res) => {
             this.webview.postMessage({
               command: "callResult",
               callId,
               result: res,
             });
-          })
-          .catch((error) => {
-            this.webview.postMessage({
-              command: "callResult",
-              callId,
-              error: { name: error.name, message: error.message },
-            });
           });
-      } else {
+        } else {
+          this.webview.postMessage({
+            command: "callResult",
+            callId,
+            result,
+          });
+        }
+      } catch (error: any) {
+        const errorClassName = error?.constructor?.name;
         this.webview.postMessage({
           command: "callResult",
           callId,
-          result,
+          error: { name: error.name, message: error.message, className: errorClassName },
         });
       }
     }

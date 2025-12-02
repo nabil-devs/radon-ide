@@ -18,13 +18,6 @@
   box-sizing: border-box;
 }
 
-.response-tab-truncated-warning {
-  display: flex;
-  align-items: center;
-  color: var(--vscode-problemsWarningIcon-foreground);
-  margin: 0 0 14px 0;
-}
-
 .response-tab-button-wrapper {
   position: sticky;
   top: 8px;
@@ -43,6 +36,16 @@
   font-size: var(--vscode-editor-font-size);
 }
 
+.response-tab-base64-wrap,
+.response-tab-base64-wrap > pre {
+  margin: 0 14px 14px 0;
+  font-size: var(--vscode-editor-font-size);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+
 .shiki {
   background-color: transparent !important;
 
@@ -56,4 +59,11 @@
   align-items: center;
   margin: 0 0 14px 0;
   color: var(--vscode-notificationsInfoIcon-foreground);
+}
+
+.base64-code {
+  margin-top: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }

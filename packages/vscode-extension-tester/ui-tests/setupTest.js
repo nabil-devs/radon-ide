@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import {
   VSBrowser,
   WebView,
@@ -6,15 +8,15 @@ import {
   BottomBarPanel,
   Key,
 } from "vscode-extension-tester";
-import path from "path";
-import fs from "fs";
 import {
   initServer,
   getAppWebsocket,
   closeServer,
 } from "../server/webSocketServer.js";
+import initServices from "../services/index.js";
 import startRecording from "../utils/screenRecording.js";
 import getConfiguration from "../configuration.js";
+import { texts } from "../utils/constants.js";
 
 const { IS_RECORDING } = getConfiguration();
 
@@ -43,26 +45,24 @@ before(async function () {
   await workbench.executeCommand("View: Close All Editors");
 
   view = new WebView();
+
+  await workbench.executeCommand("Chat: Open Chat");
+  await workbench.executeCommand("View: Toggle Secondary Side Bar Visibility");
+
+  const radonViewsService = initServices(driver).radonViewsService;
+
+  await radonViewsService.activateRadonIDELicense();
+  await driver.switchTo().defaultContent();
   if (IS_RECORDING) {
     recorder = startRecording(driver, { interval: 100 });
   }
-  await workbench.executeCommand("Chat: Open Chat");
-  await workbench.executeCommand("View: Toggle Secondary Side Bar Visibility");
 });
 
-afterEach(async function () {
-  if (this.currentTest.state === "failed") {
-    driver = VSBrowser.instance.driver;
-    const image = await driver.takeScreenshot();
+export const cleanUpAfterTest = async () => {
+  // in case some modal stayed opened after tests
+  await driver.actions().sendKeys(Key.ESCAPE).perform();
 
-    const screenshotDir = path.join(process.cwd(), "screenshots");
-    const filePath = path.join(screenshotDir, `${this.currentTest.title}.png`);
-
-    fs.mkdirSync(screenshotDir, { recursive: true });
-    fs.writeFileSync(filePath, image, "base64");
-    console.log(`Saved screenshot: ${filePath}`);
-    failedTests.push(this.currentTest.fullTitle());
-  }
+  const { vscodeHelperService } = initServices(driver);
   view = new WebView();
   await view.switchBack();
   let bottomBar = new BottomBarPanel();
@@ -70,17 +70,9 @@ afterEach(async function () {
   await new EditorView().closeAllEditors();
   await driver.switchTo().defaultContent();
 
-  // this method of reloading window seems to be more reliable than workbench.executeCommand("Developer: Reload Window")
-  await driver
-    .actions()
-    .keyDown(Key.SHIFT)
-    .keyDown(Key.COMMAND)
-    .sendKeys("p")
-    .keyUp(Key.COMMAND)
-    .keyUp(Key.SHIFT)
-    .perform();
-  await driver.actions().sendKeys("Developer: Reload Window").perform();
-  await driver.actions().sendKeys(Key.ENTER).perform();
+  await vscodeHelperService.openCommandLineAndExecute(
+    "Developer: Reload Window"
+  );
 
   driver.wait(async () => {
     try {
@@ -100,6 +92,26 @@ afterEach(async function () {
       return false;
     }
   }, 10000);
+};
+
+afterEach(async function () {
+  if (this.currentTest.state === "failed") {
+    driver = VSBrowser.instance.driver;
+    const image = await driver.takeScreenshot();
+
+    const screenshotDir = path.join(process.cwd(), "screenshots");
+    const filePath = path.join(
+      screenshotDir,
+      `${this.currentTest.title}-${Date.now()}.png`
+    );
+
+    fs.mkdirSync(screenshotDir, { recursive: true });
+    fs.writeFileSync(filePath, image, "base64");
+    console.log(`Saved screenshot: ${filePath}`);
+    failedTests.push(this.currentTest.fullTitle());
+  }
+
+  await cleanUpAfterTest();
 });
 
 after(async function () {
@@ -107,6 +119,11 @@ after(async function () {
     await recorder.stop();
   }
   closeServer();
+  console.log(
+    `==== Summary app: ${texts.expectedProjectName} | code version: ${
+      process.env["CODE_VERSION"] || "latest"
+    } ${getConfiguration().IS_ANDROID ? "android" : "ios"} ====`
+  );
   // console log additional informations after standard mocha report
   setTimeout(() => {
     if (failedTests.length > 0) {
@@ -127,6 +144,7 @@ after(async function () {
         `npm run run-tests-on-VM -- <test-app> ${failingTestNumbers.join(" ")}`
       );
     }
+    console.log("============");
   }, 0);
 });
 

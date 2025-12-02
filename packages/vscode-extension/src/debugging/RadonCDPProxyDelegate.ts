@@ -4,27 +4,53 @@ import _ from "lodash";
 import { CDPProxyDelegate, ProxyTunnel } from "./CDPProxy";
 import { Logger } from "../Logger";
 
+function isProfilerStopResult(result: object): result is Cdp.Profiler.StopResult {
+  // StopResult has a "profile" property
+  if (!("profile" in result) || typeof result.profile !== "object") {
+    return false;
+  }
+
+  // The "profile" property has a list of "nodes"
+  if (!result.profile || !("nodes" in result.profile)) {
+    return false;
+  }
+
+  // if we're here, then either the result has the required type,
+  // or the result is malformed (which we don't care to handle)
+  return true;
+}
+
 export class RadonCDPProxyDelegate implements CDPProxyDelegate {
   private debuggerPausedEmitter = new EventEmitter<{ reason: "breakpoint" | "exception" }>();
   private debuggerResumedEmitter = new EventEmitter();
   private consoleAPICalledEmitter = new EventEmitter();
   private bindingCalledEmitter = new EventEmitter<Cdp.Runtime.BindingCalledEvent>();
-  private bundleParsedEmitter = new EventEmitter<{ isMainBundle: boolean }>();
+  private bundleParsedEmitter = new EventEmitter<{ isMainBundle: boolean; sourceUrl: string }>();
+  private networkEventEmitter = new EventEmitter();
 
   private justCalledStepOver = false;
   private resumeEventTimeout: NodeJS.Timeout | undefined;
+  private pausedEventTimeout: NodeJS.Timeout | undefined;
+  private mainScriptId: string | undefined;
 
   public onDebuggerPaused = this.debuggerPausedEmitter.event;
   public onDebuggerResumed = this.debuggerResumedEmitter.event;
   public onConsoleAPICalled = this.consoleAPICalledEmitter.event;
   public onBindingCalled = this.bindingCalledEmitter.event;
   public onBundleParsed = this.bundleParsedEmitter.event;
+  public onNetworkEvent = this.networkEventEmitter.event;
 
   public async handleApplicationCommand(
     applicationCommand: IProtocolCommand,
     tunnel: ProxyTunnel
   ): Promise<IProtocolCommand | IProtocolSuccess | IProtocolError | undefined> {
-    switch (applicationCommand.method) {
+    const commandMethod = applicationCommand.method;
+
+    if (commandMethod.startsWith("Network.")) {
+      return this.handleNetworkEvent(applicationCommand);
+    }
+
+    switch (commandMethod) {
       case "Runtime.consoleAPICalled": {
         return this.handleConsoleAPICalled(applicationCommand);
       }
@@ -72,6 +98,11 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
       clearTimeout(this.resumeEventTimeout);
       this.resumeEventTimeout = undefined;
     }
+    if (this.pausedEventTimeout) {
+      // if pause event was delayed, we clear it
+      clearTimeout(this.pausedEventTimeout);
+      this.pausedEventTimeout = undefined;
+    }
     if (this.justCalledStepOver) {
       // when step-over is called, we expect Debugger.resumed event to be called
       // after which the paused event will be fired almost immediately as the
@@ -90,6 +121,13 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
   }
 
   private handleDebuggerPaused(command: IProtocolCommand, tunnel: ProxyTunnel) {
+    if (this.pausedEventTimeout) {
+      // we clear pause event here as well as we will either schedule a new one
+      // or fire the event immediately.
+      clearTimeout(this.pausedEventTimeout);
+      this.pausedEventTimeout = undefined;
+    }
+
     const params = command.params as Cdp.Debugger.PausedEvent;
     if (this.shouldResumeImmediately(params)) {
       tunnel.injectDebuggerCommand({
@@ -108,9 +146,12 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
       this.resumeEventTimeout = undefined;
     }
 
-    this.debuggerPausedEmitter.fire({ reason: "breakpoint" });
+    this.pausedEventTimeout = setTimeout(() => {
+      this.debuggerPausedEmitter.fire({ reason: "breakpoint" });
+    }, 100);
     return command;
   }
+
   private setBreakpointCommands = new Map<number, Cdp.Debugger.SetBreakpointByUrlParams>();
 
   public async handleDebuggerCommand(
@@ -160,6 +201,11 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
     return command;
   }
 
+  private handleNetworkEvent(command: IProtocolCommand) {
+    this.networkEventEmitter.fire(command);
+    return command;
+  }
+
   // NOTE: sometimes on Fast Refresh, when we try to set a new breakpoint with the new location,
   // the breakpoint is not set correctly by the application.
   // To mitigate this, we retry setting the breakpoint one time.
@@ -195,6 +241,9 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
       const finalReply = await this.maybeRetrySetBreakpointByUrl(reply, tunnel);
       return finalReply;
     }
+    if ("result" in reply && isProfilerStopResult(reply.result)) {
+      this.fixProfileResults(reply.result);
+    }
     return reply;
   }
 
@@ -202,6 +251,15 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
     reply: IProtocolSuccess | IProtocolError
   ): Promise<IProtocolSuccess | IProtocolError | undefined> {
     return reply;
+  }
+
+  private fixProfileResults(result: Cdp.Profiler.StopResult) {
+    if (!this.mainScriptId) {
+      return;
+    }
+    for (const node of result.profile.nodes) {
+      node.callFrame.scriptId = this.mainScriptId;
+    }
   }
 
   private async onRuntimeEnable(tunnel: ProxyTunnel) {
@@ -243,18 +301,26 @@ export class RadonCDPProxyDelegate implements CDPProxyDelegate {
   }
 
   private async handleScriptParsed(command: IProtocolCommand): Promise<IProtocolCommand> {
-    const { sourceMapURL } = command.params as Cdp.Debugger.ScriptParsedEvent;
+    const params = command.params as Cdp.Debugger.ScriptParsedEvent;
+    const { sourceMapURL, url } = params;
     if (!sourceMapURL) {
       return command;
     }
 
     try {
       const sourceMapData = await this.getSourceMapData(sourceMapURL);
+      if (sourceMapData.sources === undefined) {
+        return command;
+      }
       const isMainBundle = sourceMapData.sources.some((source: string) =>
         source.includes("__prelude__")
       );
 
-      this.bundleParsedEmitter.fire({ isMainBundle });
+      if (isMainBundle) {
+        this.mainScriptId = params.scriptId;
+      }
+
+      this.bundleParsedEmitter.fire({ isMainBundle, sourceUrl: url });
     } catch (e) {
       Logger.error("Could not process the source map", e);
     }

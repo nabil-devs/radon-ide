@@ -1,3 +1,4 @@
+import { exec } from "child_process";
 import { assert } from "chai";
 import {
   By,
@@ -7,11 +8,11 @@ import {
   ActivityBar,
 } from "vscode-extension-tester";
 import initServices from "../services/index.js";
-import { get } from "./setupTest.js";
-import { exec } from "child_process";
 import getConfiguration from "../configuration.js";
+import { safeDescribe } from "../utils/helpers.js";
+import { get } from "./setupTest.js";
 
-describe("3 - Adding device tests", () => {
+safeDescribe("3 - Adding device tests", () => {
   let driver,
     elementHelperService,
     radonViewsService,
@@ -120,7 +121,9 @@ describe("3 - Adding device tests", () => {
       `device-${deviceName}`
     );
 
-    await elementHelperService.findAndClickElementByTag("device-running-badge");
+    await elementHelperService.findAndClickElementByTag(
+      `device-running-badge-${deviceName}`
+    );
     await elementHelperService.waitUntilElementGone(
       By.css(`[data-testid="phone-display-container"]`),
       10000,
@@ -177,7 +180,9 @@ describe("3 - Adding device tests", () => {
     await elementHelperService.findAndWaitForElementByTag(
       `device-${deviceName}`
     );
-    await elementHelperService.findAndClickElementByTag("device-running-badge");
+    await elementHelperService.findAndClickElementByTag(
+      `device-running-badge-${deviceName}`
+    );
 
     await driver.wait(async () => {
       ({ stdout } = await execCommand(
@@ -193,6 +198,7 @@ describe("3 - Adding device tests", () => {
     await radonViewsService.openRadonIDEPanel();
     await managingDevicesService.addNewDevice(deviceName1);
     await elementHelperService.findAndClickElementByTag("modal-close-button");
+    await appManipulationService.waitForAppToLoad();
     await managingDevicesService.addNewDevice(deviceName2);
     await elementHelperService.findAndClickElementByTag(
       `device-row-start-button-device-${deviceName2}`

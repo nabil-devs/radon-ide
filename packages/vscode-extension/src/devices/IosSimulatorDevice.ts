@@ -1,8 +1,10 @@
 import path from "path";
 import fs from "fs";
+import assert from "assert";
 import { ExecaChildProcess, ExecaError } from "execa";
 import mime from "mime";
 import _ from "lodash";
+import { Disposable } from "vscode";
 import { getAppCachesDir, getOldAppCachesDir } from "../utilities/common";
 import { DeviceBase } from "./DeviceBase";
 import { Preview } from "./preview";
@@ -11,13 +13,13 @@ import { exec, lineReader } from "../utilities/subprocess";
 import { getAvailableIosRuntimes } from "../utilities/iosRuntimes";
 import { BuildResult } from "../builders/BuildManager";
 import { AppPermissionType } from "../common/Project";
-import { EXPO_GO_BUNDLE_ID, fetchExpoLaunchDeeplink } from "../builders/expoGo";
+import { EXPO_GO_BUNDLE_ID, fetchExpoLaunchDeeplink, getExpoVersion } from "../builders/expoGo";
 import { IOSBuildResult } from "../builders/buildIOS";
 import { OutputChannelRegistry } from "../project/OutputChannelRegistry";
 import { Output } from "../common/OutputChannel";
 import {
-  DeviceInfo,
   DevicePlatform,
+  DevicesByType,
   DeviceSettings,
   DeviceType,
   InstallationError,
@@ -26,6 +28,11 @@ import {
   IOSRuntimeInfo,
   Locale,
 } from "../common/State";
+import { checkXcodeExists } from "../utilities/checkXcodeExists";
+import { Platform } from "../utilities/platform";
+import { DeviceAlreadyUsedError } from "./DeviceAlreadyUsedError";
+import { DevicesProvider } from "./DevicesProvider";
+import { StateManager } from "../project/StateManager";
 
 interface SimulatorInfo {
   availability?: string;
@@ -67,7 +74,7 @@ export class IosSimulatorDevice extends DeviceBase {
   constructor(
     deviceSettings: DeviceSettings,
     private readonly deviceUDID: string,
-    private readonly _deviceInfo: DeviceInfo,
+    private readonly _deviceInfo: IOSDeviceInfo,
     private readonly outputChannelRegistry: OutputChannelRegistry
   ) {
     super(deviceSettings);
@@ -77,8 +84,12 @@ export class IosSimulatorDevice extends DeviceBase {
     return DevicePlatform.IOS;
   }
 
-  public get deviceInfo() {
+  public get deviceInfo(): IOSDeviceInfo {
     return this._deviceInfo;
+  }
+
+  public get id(): string {
+    return this.deviceUDID;
   }
 
   public get lockFilePath(): string {
@@ -89,6 +100,9 @@ export class IosSimulatorDevice extends DeviceBase {
 
   private get nativeLogsOutputChannel() {
     return this.outputChannelRegistry.getOrCreateOutputChannel(Output.IosDevice);
+  }
+  private get maestroLogsOutputChannel() {
+    return this.outputChannelRegistry.getOrCreateOutputChannel(Output.MaestroIos);
   }
 
   public dispose() {
@@ -204,6 +218,14 @@ export class IosSimulatorDevice extends DeviceBase {
         "clear",
       ]);
     } else {
+      // NOTE: because `simctl` does not accept `"0,0"` location coordinates, we pass smallest accepted values instead whenever the passed values would be rounded down to `"0,0"`
+      let latitude = settings.location.latitude.toString();
+      let longitude = settings.location.longitude.toString();
+      if (latitude === "0" && longitude === "0") {
+        latitude = "0.0001";
+        longitude = "0.0001";
+      }
+
       await exec("xcrun", [
         "simctl",
         "--set",
@@ -211,7 +233,7 @@ export class IosSimulatorDevice extends DeviceBase {
         "location",
         this.deviceUDID,
         "set",
-        `${settings.location.latitude.toString()},${settings.location.longitude.toString()}`,
+        `${latitude},${longitude}`,
       ]);
     }
     await exec("xcrun", [
@@ -493,7 +515,8 @@ export class IosSimulatorDevice extends DeviceBase {
     build: BuildResult,
     metroPort: number,
     _devtoolsPort: number | undefined,
-    launchArguments: string[]
+    launchArguments: string[],
+    appRoot: string
   ) {
     if (build.platform !== DevicePlatform.IOS) {
       throw new Error("Invalid platform");
@@ -501,8 +524,33 @@ export class IosSimulatorDevice extends DeviceBase {
     const deepLinkChoice = build.bundleID === EXPO_GO_BUNDLE_ID ? "expo-go" : "expo-dev-client";
     const expoDeeplink = await fetchExpoLaunchDeeplink(metroPort, "ios", deepLinkChoice);
     if (expoDeeplink) {
-      this.launchWithExpoDeeplink(build.bundleID, expoDeeplink);
+      Logger.info("Expo deeplink detected", expoDeeplink);
+      const expoVersion = getExpoVersion(appRoot);
+      // parseInt will return int corresponding to the major version
+      if (parseInt(expoVersion) >= 52) {
+        // for Expo SDK 52+ we can use the --initialUrl parameter to pass to the launched process on iOS
+        // this option allows us to avoid launching via deeplink and this way to avoid linking permission
+        // overrides as well as allows us to capture the process logs into the output channel.
+        assert(
+          !launchArguments.includes("--initialUrl"),
+          "Launch arguments include --initialUrl parameter. This parameter is not supported for expo-go and dev-client setups. Please remove it from the launch arguments."
+        );
+        Logger.info(
+          "Launching the app",
+          build.bundleID,
+          "using --initialUrl parameter",
+          expoDeeplink
+        );
+
+        const launchArgsWithInitialUrl = [...launchArguments, "--initialUrl", expoDeeplink];
+        await this.launchWithBuild(build, launchArgsWithInitialUrl);
+      } else {
+        // for older Expo SDKs we need to launch via deeplink
+        Logger.info("Launching the app", build.bundleID, "via deeplink", expoDeeplink);
+        this.launchWithExpoDeeplink(build.bundleID, expoDeeplink);
+      }
     } else {
+      Logger.info("Launching app using bundle ID without deeplink");
       await this.configureMetroPort(build.bundleID, metroPort);
       await this.launchWithBuild(build, launchArguments);
     }
@@ -628,14 +676,22 @@ export class IosSimulatorDevice extends DeviceBase {
     ]);
   }
 
-  makePreview(): Preview {
-    return new Preview([
+  async forwardDevicePort(port: number) {
+    // iOS Simulators do not require port forwarding
+  }
+
+  makePreview(licenseToken?: string): Preview {
+    const args = [
       "ios",
       "--id",
       this.deviceUDID,
       "--device-set",
       getOrCreateDeviceSet(this.deviceUDID),
-    ]);
+    ];
+    if (licenseToken !== undefined) {
+      args.push("-t", licenseToken);
+    }
+    return new Preview(args);
   }
 
   public async sendFile(filePath: string) {
@@ -876,7 +932,7 @@ function getOldDeviceSetLocation() {
   return path.join(oldAppCachesDir, "Devices", "iOS");
 }
 
-function getOrCreateDeviceSet(deviceUDID?: string) {
+export function getOrCreateDeviceSet(deviceUDID?: string) {
   let deviceSetLocation = getDeviceSetLocation(deviceUDID);
   if (!fs.existsSync(deviceSetLocation)) {
     fs.mkdirSync(deviceSetLocation, { recursive: true });
@@ -920,5 +976,70 @@ async function ensureUniqueDisplayNames(devices: IOSDeviceInfo[]) {
       device.displayName = newName;
       await renameIosSimulator(device.UDID, newName);
     }
+  }
+}
+
+export class IosSimulatorProvider implements DevicesProvider<IOSDeviceInfo>, Disposable {
+  constructor(
+    private stateManager: StateManager<DevicesByType>,
+    private outputChannelRegistry: OutputChannelRegistry
+  ) {}
+
+  public async listDevices() {
+    let shouldLoadSimulators = Platform.OS === "macos";
+
+    if (!shouldLoadSimulators) {
+      return [];
+    }
+
+    if (!(await checkXcodeExists())) {
+      Logger.debug("Couldn't list iOS simulators as XCode installation wasn't found");
+      return [];
+    }
+
+    try {
+      const simulators = await listSimulators(SimulatorDeviceSet.RN_IDE);
+      this.stateManager.updateState({ iosSimulators: simulators });
+      return simulators;
+    } catch (e) {
+      Logger.error("Error fetching simulators", e);
+      return [];
+    }
+  }
+
+  public async acquireDevice(
+    deviceInfo: IOSDeviceInfo,
+    deviceSettings: DeviceSettings
+  ): Promise<IosSimulatorDevice | undefined> {
+    if (deviceInfo.platform !== DevicePlatform.IOS) {
+      return undefined;
+    }
+
+    if (Platform.OS !== "macos") {
+      throw new Error("Invalid platform. Expected macos.");
+    }
+
+    const simulators = await listSimulators(SimulatorDeviceSet.RN_IDE);
+    const simulatorInfo = simulators.find((device) => device.id === deviceInfo.id);
+    if (!simulatorInfo || simulatorInfo.platform !== DevicePlatform.IOS) {
+      throw new Error(`Simulator ${deviceInfo.id} not found`);
+    }
+    const device = new IosSimulatorDevice(
+      deviceSettings,
+      simulatorInfo.UDID,
+      simulatorInfo,
+      this.outputChannelRegistry
+    );
+
+    if (await device.acquire()) {
+      return device;
+    }
+
+    device.dispose();
+    throw new DeviceAlreadyUsedError();
+  }
+
+  public dispose() {
+    this.stateManager.dispose();
   }
 }

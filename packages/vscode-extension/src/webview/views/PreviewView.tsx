@@ -19,14 +19,21 @@ import ReplayIcon from "../components/icons/ReplayIcon";
 import RecordingIcon from "../components/icons/RecordingIcon";
 import ToolsDropdown from "../components/ToolsDropdown";
 import AppRootSelect from "../components/AppRootSelect";
-import { vscode } from "../utilities/vscode";
 import RadonConnectView from "./RadonConnectView";
 import { useStore } from "../providers/storeProvider";
 import { useSelectedDeviceSessionState } from "../hooks/selectedSession";
-import { InspectorAvailabilityStatus, ProfilingState, ZoomLevelType } from "../../common/State";
+import {
+  InspectorAvailabilityStatus,
+  MaestroTestState,
+  ProfilingState,
+  ZoomLevelType,
+} from "../../common/State";
 import { useModal } from "../providers/ModalProvider";
 import Button from "../components/shared/Button";
 import { ActivateLicenseView } from "./ActivateLicenseView";
+import { Feature, LicenseStatus } from "../../common/License";
+import { usePaywalledCallback } from "../hooks/usePaywalledCallback";
+import { useDevices } from "../hooks/useDevices";
 
 const INSPECTOR_AVAILABILITY_MESSAGES = {
   [InspectorAvailabilityStatus.Available]: "Select an element to inspect it",
@@ -42,9 +49,10 @@ function ActivateLicenseButton() {
   return (
     <Button
       className="activate-license-button"
+      dataTest="open-activate-license-modal-button"
       onClick={() => {
         project.sendTelemetry("activateLicenseButtonClicked");
-        openModal("Activate License", <ActivateLicenseView />);
+        openModal(<ActivateLicenseView />, { title: "Activate License" });
       }}>
       {""} {/* using empty string here as the content is controlled via css */}
     </Button>
@@ -90,20 +98,58 @@ function ActiveToolButton({
   );
 }
 
+function ActiveTestButton({
+  testState,
+  title,
+  onClick,
+  dataTest,
+}: {
+  testState: MaestroTestState;
+  title: string;
+  onClick: () => void;
+  dataTest?: string;
+}) {
+  const showButton = testState !== "stopped";
+  return (
+    <IconButton
+      className={showButton ? "button-recording-on" : "button-recording-off"}
+      data-testid={dataTest}
+      tooltip={{
+        label: title,
+      }}
+      disabled={testState !== "running"}
+      onClick={onClick}>
+      {showButton && (
+        <>
+          <span
+            className={
+              testState === "aborting"
+                ? "codicon codicon-loading codicon-modifier-spin"
+                : "stop-square"
+            }
+          />
+          <span>{title}</span>
+        </>
+      )}
+    </IconButton>
+  );
+}
+
 function PreviewView() {
   const store$ = useStore();
   const selectedDeviceSessionState = useSelectedDeviceSessionState();
   const selectedDeviceSessionStatus = use$(selectedDeviceSessionState.status);
   const selectedProjectDevice = use$(selectedDeviceSessionState.deviceInfo);
   const deviceSettings = use$(store$.workspaceConfiguration.deviceSettings);
+  const licenseStatus = use$(store$.license.status);
 
-  const { projectState, project, hasActiveLicense } = useProject();
+  const { projectState, project } = useProject();
 
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectFrame, setInspectFrame] = useState<Frame | null>(null);
   const [inspectStackData, setInspectStackData] = useState<InspectStackData | null>(null);
 
-  const devices = use$(store$.devicesState.devices) ?? [];
+  const devices = useDevices(store$);
   const fps = use$(useSelectedDeviceSessionState().frameReporting.frameReport.fps);
   const frameReportingEnabled = use$(useSelectedDeviceSessionState().frameReporting.enabled);
   const initialized = use$(store$.projectState.initialized);
@@ -170,9 +216,17 @@ function PreviewView() {
     };
   }, []);
 
+  const paywalledToggleRecording = usePaywalledCallback(
+    async () => {
+      await project.toggleRecording();
+    },
+    Feature.ScreenRecording,
+    []
+  );
+
   function toggleRecording() {
     try {
-      project.toggleRecording();
+      paywalledToggleRecording();
     } catch (e) {
       if (isRecording) {
         project.showDismissableError("Failed to capture recording");
@@ -192,16 +246,40 @@ function PreviewView() {
     project.stopReportingFrameRate();
   }
 
+  function stopMaestroTest() {
+    project.stopMaestroTest();
+  }
+
+  const paywalledCaptureReplay = usePaywalledCallback(
+    async () => {
+      await project.captureReplay();
+    },
+    Feature.ScreenReplay,
+    []
+  );
+
   async function handleReplay() {
     try {
-      await project.captureReplay();
+      await paywalledCaptureReplay();
     } catch (e) {
       project.showDismissableError("Failed to capture replay");
     }
   }
 
+  const paywalledCaptureScreenshot = usePaywalledCallback(
+    async () => {
+      await project.captureScreenshot();
+    },
+    Feature.Screenshot,
+    []
+  );
+
   async function captureScreenshot() {
-    project.captureScreenshot();
+    try {
+      await paywalledCaptureScreenshot();
+    } catch (e) {
+      project.showDismissableError("Failed to capture screenshot");
+    }
   }
 
   function onInspectorItemSelected(item: InspectDataStackItem) {
@@ -260,20 +338,14 @@ function PreviewView() {
       : "stopped"
   );
 
+  const maestroTestState = use$(() =>
+    isRunning
+      ? (selectedDeviceSessionState.applicationSession.maestroTestState.get() ?? "stopped")
+      : "stopped"
+  );
+
   return (
-    <div
-      className="panel-view"
-      data-testid="radon-panel-view"
-      onFocus={(e) => {
-        vscode.postMessage({
-          command: "focusPreview",
-        });
-      }}
-      onBlur={(e) => {
-        vscode.postMessage({
-          command: "blurPreview",
-        });
-      }}>
+    <div className="panel-view" data-testid="radon-panel-view">
       <div className="button-group-top">
         <div className="button-group-top-left">
           <UrlBar disabled={!selectedProjectDevice} />
@@ -295,6 +367,12 @@ function PreviewView() {
             toolState={frameReportingEnabled ? "profiling" : "stopped"}
             title={"FPS: " + (fps ?? 0)}
             onClick={stopReportingFrameRate}
+          />
+          <ActiveTestButton
+            testState={maestroTestState}
+            title="Abort Maestro test"
+            onClick={stopMaestroTest}
+            dataTest="radon-top-bar-maestro-test-button"
           />
           <ToolsDropdown disabled={!debuggerToolsButtonsActive}>
             <IconButton
@@ -408,7 +486,9 @@ function PreviewView() {
           <DeviceSelect />
         </div>
         <div className="spacer" />
-        {Platform.OS === "macos" && !hasActiveLicense && <ActivateLicenseButton />}
+        {Platform.OS === "macos" && licenseStatus === LicenseStatus.Inactive && (
+          <ActivateLicenseButton />
+        )}
         <DeviceSettingsDropdown disabled={!navBarButtonsActive}>
           <IconButton
             tooltip={{ label: "Device settings", type: "primary" }}

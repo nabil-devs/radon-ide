@@ -11,8 +11,10 @@
 }
 
 .network-log-details-tab {
-  width: max-content;
   min-width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .tab-padding {

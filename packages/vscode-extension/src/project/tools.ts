@@ -1,6 +1,7 @@
 import { Disposable } from "vscode";
 import _ from "lodash";
-import { RadonInspectorBridge } from "./bridge";
+import { RadonInspectorBridge } from "./inspectorBridge";
+import { NetworkBridge } from "./networkBridge";
 import { extensionContext } from "../utilities/extensionContext";
 import {
   createExpoDevPluginTools,
@@ -22,15 +23,20 @@ import { disposeAll } from "../utilities/disposables";
 import { ToolsState } from "../common/State";
 import { StateManager } from "./StateManager";
 import { WorkspaceConfiguration } from "../common/State";
+import {
+  APOLLO_PLUGIN_ID,
+  ApolloClientDevtoolsPlugin,
+} from "../plugins/apollo-client-devtools-plugin/apollo-client-devtools-plugin";
 
 const TOOLS_SETTINGS_KEY = "tools_settings";
 
 export type ToolKey =
   | ExpoDevPluginToolName
-  | typeof REACT_QUERY_PLUGIN_ID
+  | typeof APOLLO_PLUGIN_ID
   | typeof NETWORK_PLUGIN_ID
+  | typeof RENDER_OUTLINES_PLUGIN_ID
   | typeof REDUX_PLUGIN_ID
-  | typeof RENDER_OUTLINES_PLUGIN_ID;
+  | typeof REACT_QUERY_PLUGIN_ID;
 
 export interface ToolPlugin extends Disposable {
   id: ToolKey;
@@ -39,8 +45,10 @@ export interface ToolPlugin extends Disposable {
   persist: boolean;
   pluginAvailable: boolean;
   pluginUnavailableTooltip?: string;
-  activate(): void;
+  enable(): void;
+  disable(): void;
   deactivate(): void;
+  activate(): void;
   openTool?(): void;
 }
 
@@ -62,7 +70,9 @@ export class ToolsManager implements Disposable {
   public constructor(
     private readonly stateManager: StateManager<ToolsState>,
     public readonly inspectorBridge: RadonInspectorBridge,
-    public readonly workspaceConfigState: StateManager<WorkspaceConfiguration>
+    public readonly networkBridge: NetworkBridge,
+    public readonly workspaceConfigState: StateManager<WorkspaceConfiguration>,
+    public readonly metroPort: number
   ) {
     this.toolsSettings = Object.assign({}, extensionContext.workspaceState.get(TOOLS_SETTINGS_KEY));
     for (const plugin of createExpoDevPluginTools()) {
@@ -85,7 +95,11 @@ export class ToolsManager implements Disposable {
     };
 
     this.plugins.set(REDUX_PLUGIN_ID, new ReduxDevtoolsPlugin(inspectorBridge));
-    this.plugins.set(NETWORK_PLUGIN_ID, new NetworkPlugin(inspectorBridge));
+    this.plugins.set(APOLLO_PLUGIN_ID, new ApolloClientDevtoolsPlugin(inspectorBridge));
+    this.plugins.set(
+      NETWORK_PLUGIN_ID,
+      new NetworkPlugin(inspectorBridge, networkBridge, metroPort)
+    );
     this.plugins.set(
       RENDER_OUTLINES_PLUGIN_ID,
       new RenderOutlinesPlugin(
@@ -119,7 +133,7 @@ export class ToolsManager implements Disposable {
   }
 
   dispose() {
-    this.activePlugins.forEach((plugin) => plugin.deactivate());
+    this.activePlugins.forEach((plugin) => plugin.disable());
     this.activePlugins.clear();
     this.plugins.forEach((plugin) => plugin.dispose());
     disposeAll(this.disposables);
@@ -140,10 +154,10 @@ export class ToolsManager implements Disposable {
         const active = this.activePlugins.has(plugin);
         if (active !== enabled) {
           if (enabled) {
-            plugin.activate();
+            plugin.enable();
             this.activePlugins.add(plugin);
           } else {
-            plugin.deactivate();
+            plugin.disable();
             this.activePlugins.delete(plugin);
           }
         }

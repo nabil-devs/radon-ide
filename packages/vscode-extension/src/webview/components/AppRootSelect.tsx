@@ -27,9 +27,10 @@ function displayNameForConfig(config: LaunchConfiguration) {
   return config.name;
 }
 
-function ConfigureButton({ onClick }: { onClick?: () => void }) {
+function ConfigureButton({ onClick, dataTest }: { onClick?: () => void; dataTest?: string }) {
   return (
     <div
+      data-testid={dataTest || "edit-launch-config-button"}
       onPointerUpCapture={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -58,13 +59,14 @@ function renderLaunchConfigurations(
         <RichSelectItem
           value={`${prefix}:${idx}`}
           key={idx}
-          data-testid={`approot-select-item-${config.appRoot}`}
+          data-testid={`approot-select-item-${config.name || config.appRoot}`}
           icon={<span className="codicon codicon-folder" />}
           title={displayNameForConfig(config) ?? config.appRoot ?? "./"}
           subtitle={displayNameForConfig(config) ? config.appRoot : undefined}
           isSelected={selectedValue === `${prefix}:${idx}`}>
           {onEditConfig && (
             <ConfigureButton
+              dataTest={`edit-launch-config-button-${config.name || idx}`}
               onClick={() =>
                 onEditConfig(config as LaunchConfiguration, selectedValue === `${prefix}:${idx}`)
               }
@@ -148,10 +150,9 @@ function AppRootSelect() {
   const { openModal } = useModal();
 
   function onEditConfig(config: LaunchConfiguration, isSelected: boolean) {
-    openModal(
-      "Launch Configuration",
-      <LaunchConfigurationView launchConfig={config} isCurrentConfig={isSelected} />
-    );
+    openModal(<LaunchConfigurationView launchConfig={config} isCurrentConfig={isSelected} />, {
+      title: "Launch Configuration",
+    });
   }
 
   const detectedConfigurations = useMemo(
@@ -169,7 +170,7 @@ function AppRootSelect() {
 
   const handleAppRootChange = async (value: string) => {
     if (value === "manage") {
-      openModal("Launch Configuration", <LaunchConfigurationView />);
+      openModal(<LaunchConfigurationView />, { title: "Launch Configuration" });
       return;
     }
     const isDetected = value.startsWith("detected:");
@@ -234,7 +235,7 @@ function AppRootSelect() {
             {renderDetectedLaunchConfigurations(detectedConfigurations, selectedValue)}
             {renderCustomLaunchConfigurations(customConfigurations, selectedValue, onEditConfig)}
             {configurationsCount > 0 && <Select.Separator className="approot-select-separator" />}
-            <SelectItem value="manage">
+            <SelectItem value="manage" data-testid="add-launch-config-button">
               <span className="codicon codicon-add" />
               <span> Add custom launch config</span>
             </SelectItem>

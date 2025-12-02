@@ -83,6 +83,7 @@ export class ApplicationDependencyManager implements Disposable {
 
     this.checkProjectUsesExpoRouter();
     this.checkProjectUsesStorybook();
+    this.checkMaestroInstallationStatus();
     this.checkEasCliInstallationStatus();
   }
 
@@ -110,7 +111,7 @@ export class ApplicationDependencyManager implements Disposable {
 
   public async ensureDependenciesForBuild(buildConfig: BuildConfig, buildOptions: BuildOptions) {
     if (buildConfig.type === BuildType.Local || buildConfig.type === BuildType.DevClient) {
-      if (buildConfig.type === BuildType.DevClient || buildConfig.usePrebuild) {
+      if (buildConfig.usePrebuild) {
         try {
           await this.prebuild.runPrebuildIfNeeded(buildConfig, buildOptions);
         } catch (e) {
@@ -368,6 +369,27 @@ export class ApplicationDependencyManager implements Disposable {
       },
     });
     return installed;
+  }
+
+  public async checkMaestroInstallationStatus() {
+    try {
+      await exec("maestro", ["--version"]);
+      this.stateManager.updateState({
+        maestro: {
+          status: "installed",
+          isOptional: true,
+        },
+      });
+      return true;
+    } catch (error) {
+      this.stateManager.updateState({
+        maestro: {
+          status: "notInstalled",
+          isOptional: true,
+        },
+      });
+      return false;
+    }
   }
 
   public async checkEasCliInstallationStatus() {

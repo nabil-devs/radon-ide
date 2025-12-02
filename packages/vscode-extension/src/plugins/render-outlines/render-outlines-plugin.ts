@@ -6,7 +6,7 @@ import {
   RenderOutlinesEventMap,
   RenderOutlinesInterface,
 } from "../../common/RenderOutlines";
-import { RadonInspectorBridge } from "../../project/bridge";
+import { RadonInspectorBridge } from "../../project/inspectorBridge";
 import { ToolPlugin } from "../../project/tools";
 import { disposeAll } from "../../utilities/disposables";
 import { InspectorAvailabilityStatus, REMOVE, WorkspaceConfiguration } from "../../common/State";
@@ -104,14 +104,22 @@ export class RenderOutlinesPlugin implements ToolPlugin, RenderOutlinesInterface
     return INSPECTOR_AVAILABILITY_MESSAGES[this.inspectorAvailability];
   }
 
-  activate(): void {
+  enable(): void {
     this.enableRequested = true;
     this.updatePluginState();
   }
 
-  deactivate(): void {
+  disable(): void {
     this.enableRequested = false;
     this.updatePluginState();
+  }
+
+  activate(): void {
+    this.enable();
+  }
+
+  deactivate(): void {
+    this.disable();
   }
 
   dispose() {

@@ -5,6 +5,7 @@ import os from "os";
 import assert from "assert";
 import { Disposable, EventEmitter, Uri } from "vscode";
 import { WebSocketServer } from "ws";
+import { InspectedElementPayload } from "react-devtools-inline";
 import { Logger } from "../Logger";
 import {
   createBridge,
@@ -14,9 +15,14 @@ import {
   Wall,
   FrontendBridge,
 } from "../../third-party/react-devtools/headless";
-import { BaseInspectorBridge, RadonInspectorBridgeEvents } from "./bridge";
+import { InspectorBridge, RadonInspectorBridgeEvents } from "./inspectorBridge";
 import { DebugSession } from "../debugging/DebugSession";
 import { disposeAll } from "../utilities/disposables";
+import { TimeoutError } from "../common/Errors";
+
+const TIMEOUT_DELAY = 10_000;
+const INSPECT_RESULT_EVENT = "inspectedElement";
+const INSPECT_REQUEST_EVENT = "inspectElement";
 
 function filePathForProfile() {
   const fileName = `profile-${Date.now()}.reactprofile`;
@@ -34,7 +40,7 @@ type IdeMessage = Parameters<IdeMessageListener>[0];
 /**
  * InspectorBridge implementation that uses the React DevTools frontend to receive messages from the application.
  */
-export class DevtoolsInspectorBridge extends BaseInspectorBridge implements Disposable {
+export class DevtoolsInspectorBridge extends InspectorBridge implements Disposable {
   private devtoolsConnection: DevtoolsConnection | undefined;
   private devtoolsServerListener?: Disposable;
   private devtoolsConnectionListeners: Disposable[] = [];
@@ -90,7 +96,7 @@ export class DevtoolsInspectorBridge extends BaseInspectorBridge implements Disp
 
 export class DevtoolsConnection implements Disposable {
   private bridge: FrontendBridge;
-  private store: Store;
+  private _store: Store;
 
   public connected: boolean = true;
 
@@ -102,34 +108,82 @@ export class DevtoolsConnection implements Disposable {
   public readonly onDisconnected = this.disconnectedEventEmitter.event;
   public readonly onProfilingChange = this.profilingEventEmitter.event;
 
+  private bridgeRequestCounter = 0;
+
   constructor(private readonly wall: Wall) {
     // create the DevTools frontend for the connection
     this.bridge = createBridge(wall);
-    this.store = createStore(this.bridge);
+    this._store = createStore(this.bridge);
 
     this.bridge.addListener("RNIDE_message", (payload: unknown) => {
       this.ideMessageEventEmitter.fire(payload as IdeMessage);
     });
 
     // Register for isProfiling event on the profiler store
-    this.store.profilerStore.addListener("isProfiling", () => {
+    this._store.profilerStore.addListener("isProfiling", () => {
       // @ts-ignore - isProfilingBasedOnUserInput exists but types are outdated
-      const isProfiling = this.store.profilerStore.isProfilingBasedOnUserInput;
+      const isProfiling = this._store.profilerStore.isProfilingBasedOnUserInput;
       this.profilingEventEmitter.fire(isProfiling);
     });
   }
 
+  public get store() {
+    return this._store;
+  }
+
+  private getInspectElementResponse(requestID: number): Promise<InspectedElementPayload> {
+    const { promise, resolve, reject } = Promise.withResolvers<InspectedElementPayload>();
+
+    const cleanup = () => {
+      this.bridge.removeListener(INSPECT_RESULT_EVENT, onInspectedElement);
+      clearTimeout(timeoutID);
+    };
+
+    const onInspectedElement = (data: InspectedElementPayload) => {
+      if (data.responseID === requestID) {
+        cleanup();
+        resolve(data);
+      }
+    };
+
+    this.bridge.addListener(INSPECT_RESULT_EVENT, onInspectedElement);
+
+    const timeoutID = setTimeout(() => {
+      cleanup();
+      reject(new TimeoutError(`Timed out while inspecting element.`));
+    }, TIMEOUT_DELAY);
+
+    return promise;
+  }
+
+  public async inspectElementById(id: number) {
+    const requestID = this.bridgeRequestCounter++;
+    const rendererID = this._store.getRendererIDForElement(id) as number;
+
+    const promise = this.getInspectElementResponse(requestID);
+
+    this.bridge.send(INSPECT_REQUEST_EVENT, {
+      id,
+      rendererID,
+      requestID,
+      path: null,
+      forceFullData: true,
+    });
+
+    return promise;
+  }
+
   public async startProfilingReact() {
-    this.store?.profilerStore.startProfiling();
+    this._store?.profilerStore.startProfiling();
   }
 
   public async stopProfilingReact() {
     const { resolve, reject, promise } = Promise.withResolvers<Uri>();
     const saveProfileListener = async () => {
-      const isProcessingData = this.store?.profilerStore.isProcessingData;
+      const isProcessingData = this._store?.profilerStore.isProcessingData;
       if (!isProcessingData) {
-        this.store?.profilerStore.removeListener("isProcessingData", saveProfileListener);
-        const profilingData = this.store?.profilerStore.profilingData;
+        this._store?.profilerStore.removeListener("isProcessingData", saveProfileListener);
+        const profilingData = this._store?.profilerStore.profilingData;
         if (profilingData) {
           const exportData = prepareProfilingDataExport(profilingData);
           const filePath = filePathForProfile();
@@ -141,8 +195,8 @@ export class DevtoolsConnection implements Disposable {
       }
     };
 
-    this.store?.profilerStore.addListener("isProcessingData", saveProfileListener);
-    this.store?.profilerStore.stopProfiling();
+    this._store?.profilerStore.addListener("isProcessingData", saveProfileListener);
+    this._store?.profilerStore.stopProfiling();
     this.bridge.addListener("shutdown", () => {
       this.disconnect();
     });
@@ -200,27 +254,72 @@ const DEVTOOLS_DOMAIN_NAME = "react-devtools";
 
 export class CDPDevtoolsServer extends DevtoolsServer implements Disposable {
   private disposables: Disposable[] = [];
+  private initializeConnectionPromise: Promise<void> | undefined;
 
   constructor(private readonly debugSession: DebugSession) {
     super();
     this.disposables.push(
       debugSession.onJSDebugSessionStarted(() => {
-        this.createConnection();
+        this.maybeInitializeConnection()
+          .then(() => {
+            Logger.debug(
+              "[Devtools] Devtools connection initialized after JS Debug session started"
+            );
+          })
+          .catch(() => {
+            // we expect the method might fail to initialize the connection
+          });
       }),
       debugSession.onScriptParsed(({ isMainBundle }) => {
         if (isMainBundle) {
-          this.createConnection();
+          this.maybeInitializeConnection()
+            .then(() => {
+              Logger.debug("[Devtools] Devtools connection initialized after main bundle loaded");
+            })
+            .catch(() => {
+              // we expect the method might fail to initialize the connection
+            });
         }
       })
     );
   }
 
-  private async createConnection() {
-    const debugSession = this.debugSession;
+  private maybeInitializeConnection() {
     if (this.connection) {
       // NOTE: a single `DebugSession` only supports a single devtools connection at a time
-      return;
+      return Promise.reject(new Error("[Devtools] Connection already established."));
     }
+    const initializeInternal = () => {
+      const initializePromise = this.initializeConnection();
+      initializePromise
+        .then(() => {
+          this.initializeConnectionPromise = undefined;
+        })
+        .catch(() => {
+          // we expect the method might fail to initialize the connection
+          // as the app might not be ready to connect yet
+          Logger.debug("[Devtools] Failed to initialize devtools connection");
+        });
+
+      return initializePromise;
+    };
+
+    if (this.initializeConnectionPromise) {
+      // devtools connections cannot be initialized concurrently, we only can establish
+      // one connection, so if we are already in a process of initializing one, we only schedule
+      // a new attempt if the previous one fails
+      this.initializeConnectionPromise = this.initializeConnectionPromise.catch(() => {
+        return initializeInternal();
+      });
+    } else {
+      this.initializeConnectionPromise = initializeInternal();
+    }
+
+    return this.initializeConnectionPromise;
+  }
+
+  private async initializeConnection() {
+    const debugSession = this.debugSession;
 
     // NOTE: the binding survives JS reloads, and the Devtools frontend will reconnect automatically
     await debugSession.addBinding(BINDING_NAME);
@@ -231,7 +330,7 @@ export class CDPDevtoolsServer extends DevtoolsServer implements Disposable {
       // NOTE: if the dispatcher is not present, it's likely the app
       // has not loaded yet or failed to load the JS bundle.
       // In either case, there's nothing to connect to.
-      return;
+      throw new Error("Failed to initialize devtools connection, dispatcher not present");
     }
 
     const wall: Wall = {
@@ -249,9 +348,15 @@ export class CDPDevtoolsServer extends DevtoolsServer implements Disposable {
       },
       send(event, payload, _transferable) {
         const serializedMessage = JSON.stringify({ event, payload });
-        debugSession.evaluateExpression({
-          expression: `void ${DISPATCHER_GLOBAL}.sendMessage("${DEVTOOLS_DOMAIN_NAME}", '${serializedMessage}')`,
-        });
+        const escapedMessage = serializedMessage.replaceAll("\\", "\\\\");
+        debugSession
+          .evaluateExpression({
+            expression: `void ${DISPATCHER_GLOBAL}.sendMessage("${DEVTOOLS_DOMAIN_NAME}", '${escapedMessage}')`,
+          })
+          .catch(() => {
+            // this method might be used by the devtools bridge implementation while JS Debugger
+            // is disconnected so we just ignore any errors here
+          });
       },
     };
 
@@ -261,7 +366,9 @@ export class CDPDevtoolsServer extends DevtoolsServer implements Disposable {
       shutdownListener.dispose();
     });
     connection.onDisconnected(() => {
-      this.setConnection(undefined);
+      if (this.connection === connection) {
+        this.setConnection(undefined);
+      }
     });
 
     this.setConnection(connection);
